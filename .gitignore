@@ -1,0 +1,36 @@
+# IntelliJ
+.idea/
+*.iml
+out/
+
+# Maven / Java build
+target/
+*.class
+*.jar
+*.war
+
+# macOS
+.DS_Store
+
+# Credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*
+**/setenv.sh
+
+# SQLite runtime files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Performance data
+swipe_metrics_*.csv
+
+# Logs
+*.log
+logs/

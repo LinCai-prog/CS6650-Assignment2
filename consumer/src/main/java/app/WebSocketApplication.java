@@ -18,12 +18,10 @@ public class WebSocketApplication {
 
     public static void main(String[] args) throws Exception {
 
-        int port = 8081;
+        int port = Integer.parseInt(System.getenv().getOrDefault("WS_PORT", "8081"));
 
-        String databasePath = Paths.get(
-                "data",
-                "leaderboard.db"
-        ).toAbsolutePath().toString();
+        String databasePath = Paths.get(System.getenv().getOrDefault(
+                "LEADERBOARD_DB_PATH", "data/leaderboard.db")).toAbsolutePath().toString();
 
         LeaderboardStore store =
                 new SqliteLeaderboardStore(databasePath);
@@ -34,7 +32,7 @@ public class WebSocketApplication {
 
         LeaderboardWebSocketServer server =
                 new LeaderboardWebSocketServer(
-                        new InetSocketAddress("127.0.0.1", port),
+                        new InetSocketAddress(System.getenv().getOrDefault("WS_BIND_HOST", "127.0.0.1"), port),
                         store
                 );
 
@@ -103,6 +101,8 @@ public class WebSocketApplication {
                             updateChannel,
                             server
                     );
+
+            updateSubscriber.prepare();
 
             // Asynchronous WebSocket startup.
             server.start();

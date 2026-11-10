@@ -17,6 +17,7 @@
     </properties>
 
     <dependencies>
+        <dependency><groupId>cs6650.lab2</groupId><artifactId>leaderboard-common</artifactId><version>1.0-SNAPSHOT</version></dependency>
         <!-- RabbitMQ Java Client -->
         <dependency>
             <groupId>com.rabbitmq</groupId>

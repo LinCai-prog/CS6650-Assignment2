@@ -1,130 +1,105 @@
-# CS6650 Assignment 2 — System Architecture
+# Architecture: distributed ingestion and real leaderboards
 
-**Project:** Message Distribution and the Real Leaderboard  
-**Course:** CS6650 — Building Scalable Distributed Systems
-
-## 1. System Overview
-
-SkiTrak is a distributed, event-driven ski tracking system deployed on AWS EC2. It separates HTTP request ingestion from asynchronous processing and real-time leaderboard delivery.
-
-The system uses four Tomcat ingest servers behind an Application Load Balancer (ALB), RabbitMQ for message distribution, a Java consumer for aggregation, SQLite for persistence, and a separate WebSocket application for notifications.
-
-### Architecture Diagram
+## Components and topology
 
 ```text
-                 Load Testing Client
-                 HTTP + WS Subscribers
-                          |
-                  HTTP requests
-                          |
-                          v
-                 AWS Application
-                  Load Balancer
-                          |
-              +-----------+-----------+
-              |           |           |
-           Ingest 1    Ingest 2    Ingest 3/4
-              |           |           |
-              +-----------+-----------+
-                          |
-                          v
-                    RabbitMQ Broker
-                   skitrak.exchange
-                          |
-                 resort.1 ... resort.10
-                          |
-                          v
-                Consumer Application
-                          |
-                Validation / Deduplication
-                Per-Resort Aggregation
-                          |
-                          v
-                    SQLite Database
-                          |
-                   Leaderboard Updates
-                          |
-                          v
-                    RabbitMQ Backplane
-                          |
-                          v
-                  WebSocket Application
-                          |
-                          v
-                 Connected Subscribers
+HTTP + WebSocket clients
+          |
+          v
+     AWS ALB :80
+          |
+   +------+------+------+------+
+   |             Four ingest hosts       |
+   |     HTTP servlet + real WebSocket   |
+   +------+------+------+------+
+          |                 ^
+          v                 | per-host copy
+  RabbitMQ skitrak.exchange  | skitrak.leaderboard.updates
+          |                 |
+  resort.1 ... resort.10     |
+          |                 |
+          v                 |
+  Processing consumer ---- outbox dispatcher
+          |
+          v
+        SQLite
+          ^
+          |
+  Snapshot responder <---- snapshot requests from ingest hosts
 ```
 
-The HTTP ALB distributes ingest traffic. In the tested deployment, WebSocket connections are handled by a separate application on the processing EC2 instance, rather than by the four Tomcat ingest servers.
+RabbitMQ runs on a separate EC2 instance. Four Tomcat ingest instances are the
+ALB targets. Each owns its accepted WebSocket connections and its own exclusive
+backplane queue. The processing EC2 instance owns SQLite, the ordered consumers,
+the outbox dispatcher and the snapshot responder. The shared `leaderboard-common`
+module defines the versioned leaderboard payload used by both applications.
 
-## 2. Swipe-to-Leaderboard Sequence
+## Swipe-to-leaderboard sequence
 
-1. **Request ingestion:** The client sends a lift-ride request through the ALB to an available Tomcat instance.
+1. The HTTP client submits a swipe with a stable `X-Event-ID` through the ALB.
+2. The ingest servlet validates it, looks up the fixed lift vertical, borrows a
+   RabbitMQ channel, publishes to `skitrak.exchange` with `resort.{id}`, waits for
+   confirmation and returns the channel to its pool.
+3. The resort's serial executor validates and admits the event to a bounded,
+   round-robin database writer, preserving FIFO order within each resort.
+4. One bounded SQLite batch transaction records each event ID, accumulates vertical, compares
+   ordered top-10 entries before and after, and, if changed, stores an immutable
+   versioned notification in the outbox. Duplicate events change nothing.
+5. After the whole batch commits, the consumer acknowledges only contiguous
+   committed delivery tags on that resort's channel; size and timer limits flush ACKs.
+6. A separate dispatcher publishes pending notifications, waits for broker
+   confirmation and removes their outbox rows. Failed publication remains pending.
+7. The topic exchange copies each notification to every ingest host's bound queue.
+   Each host sends it only to local subscribers of the matching resort and day.
 
-2. **Validation and enrichment:** The ingest servlet validates the request, determines the lift's vertical drop, and creates a swipe event containing an `eventId`.
+## Connection locality and authoritative snapshots
 
-3. **Message publishing:** The producer borrows a RabbitMQ channel from its thread-safe pool and publishes the event to `skitrak.exchange` using a resort-specific routing key.
+This design chooses a broadcast backplane. The consumer does not hold browser
+connections and never attempts to send directly to a remote server's sessions.
+Every accepting host has its own notification queue; hosts do not compete for a
+single queue. SQLite is not copied to the ingest hosts.
 
-4. **Message consumption:** The corresponding resort queue delivers the event to the consumer.
+A new subscription is registered before requesting a snapshot from
+`skitrak.leaderboard.snapshots`. The processing responder reads the version and
+standings atomically and replies to the requesting host's exclusive callback
+queue. Correlation IDs and five-second request expiry bound outstanding requests.
+Changes racing snapshot creation are buffered; only versions newer than the
+snapshot are subsequently sent. On broker recovery, existing subscriptions are
+resynchronized. Initial synchronization supplies current state, not offline
+history of every intermediate change.
 
-5. **Aggregation:** The consumer validates the event and uses its event ID to prevent duplicate application. It updates skier totals and persistent leaderboard state in SQLite.
+This adds a bounded request/reply dependency for initial state while keeping the
+high-volume live path asynchronous. A processing-host failure prevents fresh
+snapshots, but it cannot silently substitute synthetic or empty local standings.
 
-6. **Notification:** The consumer publishes leaderboard updates through RabbitMQ. The separate WebSocket application consumes these updates and sends them to relevant locally connected subscribers.
+## Concurrency, recovery and deployment
 
-7. **Acknowledgment:** The consumer acknowledges processed messages according to its successful-processing and error-handling logic.
+The publisher reuses a connection and pooled channels with exclusive borrowing
+and connection recovery. Consumer worker count is configurable; a single serial
+executor per resort preserves normal application order. Current worker count is
+fixed during a run; dynamic scaling remains outstanding.
 
-HTTP acceptance, database persistence, and WebSocket notification are distinct asynchronous stages. A successful HTTP response does not necessarily mean the leaderboard has already been updated.
+A batch waits at most five milliseconds for collection, then applies each event
+and captures every intermediate top-10 change before committing. A failed batch
+rolls back and is retried ahead of subsequent batches. The measured configuration uses a 256 MiB page cache and
+background PASSIVE checkpoints; FULL durability and an
+automatic checkpoint fallback remain enabled. Batch execution and I/O can add
+latency beyond the collection wait. See the consumer tuning guide for configuration.
 
-## 3. RabbitMQ Queue Topology
+Aggregation and the pending update commit together. A crash between broker
+confirmation and outbox deletion may republish a version; ingest hosts discard
+versions already accepted by each subscription. WebSocket sends are serialized
+with bounded per-connection queues. Slow subscribers reconnect for a snapshot.
+Protocol pings keep idle connections active without synthetic leaderboard pushes.
 
-The ingest layer publishes to the topic exchange `skitrak.exchange`.
+The ALB forwards both HTTP requests and WebSocket upgrades to port 8080. Target
+stickiness, a 120-second idle timeout and health checks at `/server-v2/health`
+are the intended settings in the deployment script. Live routing and upgrades
+were observed; the final tests did not export all AWS attributes or prove failover. Health is 503 while the
+backplane/snapshot service is unavailable. `serverId` identifies the accepting
+host in health and WebSocket responses. Systemd restarts failed applications.
 
-Events use routing keys of the form `resort.{resortID}` and are distributed across ten resort-specific queues (`resort.1` through `resort.10`).
-
-The deployment also includes:
-
-- `skitrak.websocket.updates` for leaderboard notification delivery.
-- `skitrak.deadletter.queue` for dead-letter handling.
-
-Separating resort queues allows independent processing of different resorts and provides a basis for preserving per-resort order.
-
-RabbitMQ channels are pooled because channels must not be concurrently shared across publishing threads. Reusing channels also avoids the cost of creating a new channel for every request.
-
-## 4. Consumer Concurrency and Data Consistency
-
-The consumer uses a configurable concurrent processing architecture with resort-specific serialization controls.
-
-`ResortSerialExecutor` coordinates processing order within a resort, while independent resorts can be processed concurrently. `TaskAdmissionGate` helps coordinate acceptance of work during shutdown.
-
-Persistent event-ID deduplication protects aggregation against duplicate RabbitMQ deliveries. SQLite stores processed-event information and leaderboard state.
-
-At-least-once messaging requires the consumer to tolerate redelivery. Therefore, correct aggregation depends on idempotent database operations rather than assuming RabbitMQ delivers every event exactly once.
-
-## 5. WebSocket Connection Locality
-
-A WebSocket connection belongs to the server process that accepted it. Consequently, a consumer cannot send notifications directly to subscribers that may be connected to another process or host.
-
-The project addresses this separation using RabbitMQ as a notification backplane between the processing logic and the WebSocket application.
-
-For the current deployment, one WebSocket application instance receives leaderboard updates and broadcasts to its local subscribers.
-
-**Scalability trade-off:** This decouples aggregation from WebSocket delivery, but a single shared notification queue is not automatically a broadcast mechanism for multiple WebSocket servers. Scaling to multiple WebSocket hosts requires each host to receive relevant updates, for example through a fanout exchange with a separate queue for each host.
-
-This distinction is important because RabbitMQ's competing-consumer behavior would otherwise deliver each notification to only one consumer.
-
-## 6. Load Balancing and Failure Handling
-
-The AWS ALB distributes HTTP traffic across four Tomcat ingest instances. The ALB health checks help identify unhealthy targets and prevent new traffic from being directed to them.
-
-RabbitMQ absorbs temporary differences between ingestion and processing rates, but sustained queue growth indicates a downstream bottleneck.
-
-The consumer applies validation, acknowledgment, and persistent deduplication to support recovery from message redelivery. The processing EC2 instance runs the consumer and WebSocket application as separate systemd services configured for automatic startup.
-
-End-to-end reliability must be validated using HTTP response counts, RabbitMQ backlog, SQLite processed-event counts, and WebSocket delivery metrics.
-
-## 7. Design Trade-offs
-
-The architecture provides horizontal scalability at the HTTP ingestion layer and decouples request handling from leaderboard computation.
-
-However, increasing ingest instances does not necessarily increase total system throughput proportionally. RabbitMQ processing capacity, SQLite write contention, consumer concurrency, and WebSocket delivery may become bottlenecks.
-
-The architecture therefore prioritizes message-processing correctness and measurable end-to-end behavior over HTTP throughput alone.
+SQLite remains a centralized write and snapshot bottleneck. Multiple independent
+outbox dispatchers or unordered consumers of one resort are not supported.
+End-to-end verification must compare HTTP acceptance, unique database events,
+actual leaderboard changes and subscriber delivery, alongside queue/lag metrics.

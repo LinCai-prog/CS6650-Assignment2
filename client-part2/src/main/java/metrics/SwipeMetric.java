@@ -9,20 +9,25 @@ public class SwipeMetric {
     private final double latencyMs;
     private final int statusCode;
     private final int resortID;
+    private final String eventId, phase;
 
     public SwipeMetric(
             Instant sendTimestamp,
             Instant responseTimestamp,
             double latencyMs,
             int statusCode,
-            int resortID) {
+            int resortID, String eventId, String phase) {
 
         this.sendTimestamp = sendTimestamp;
         this.responseTimestamp = responseTimestamp;
         this.latencyMs = latencyMs;
         this.statusCode = statusCode;
         this.resortID = resortID;
+        this.eventId = eventId; this.phase = phase;
     }
+
+    public String getEventId() { return eventId; }
+    public String getPhase() { return phase; }
 
     public Instant getSendTimestamp() {
         return sendTimestamp;

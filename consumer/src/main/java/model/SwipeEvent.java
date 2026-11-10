@@ -15,6 +15,18 @@ public class SwipeEvent {
     private String timestamp;
     private String serverId;
 
+    // Local diagnostics only: Gson excludes these fields from the wire format.
+    private transient java.time.Instant receivedAt;
+    private transient long receivedNanos;
+
+    public void markReceived(java.time.Instant receivedAt, long receivedNanos) {
+        this.receivedAt = java.util.Objects.requireNonNull(receivedAt);
+        this.receivedNanos = receivedNanos;
+    }
+
+    public java.time.Instant getReceivedAt() { return receivedAt; }
+    public long getReceivedNanos() { return receivedNanos; }
+
     public String getEventId() {
         return eventId;
     }

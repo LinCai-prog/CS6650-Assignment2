@@ -39,11 +39,13 @@ public class LoadClient {
     private static final int DEFAULT_WS_DRAIN_SECONDS = 30;
 
     private static final String BASE_URL =
-            "http://cs6650-ingest-alb-972956563.us-west-2.elb.amazonaws.com/server-v2";
+            System.getenv().getOrDefault("HTTP_BASE_URL",
+                    "http://cs6650-ingest-alb-972956563.us-west-2.elb.amazonaws.com/server-v2");
 
-    // Requires an active SSH tunnel on the Mac.
+    // The ALB routes upgrades to the real WebSocket endpoint on each ingest host.
     private static final String WS_BASE_URL =
-            "ws://127.0.0.1:18081";
+            System.getenv().getOrDefault("WS_BASE_URL",
+                    "ws://cs6650-ingest-alb-972956563.us-west-2.elb.amazonaws.com/server-v2/leaderboard");
 
     public static void main(String[] args)
             throws InterruptedException, IOException {
@@ -54,7 +56,7 @@ public class LoadClient {
                 && !mode.equals("medium")
                 && !mode.equals("full")) {
             throw new IllegalArgumentException(
-                    "Usage: LoadClient [smoke|medium|full] [wsDrainSeconds]"
+                    "Usage: LoadClient [smoke|medium|full] [wsDrainSeconds] [mainThreads] [warmupThreads]"
             );
         }
 
@@ -109,6 +111,19 @@ public class LoadClient {
                 break;
         }
 
+        if (args.length > 4) throw new IllegalArgumentException("Too many arguments");
+        mainThreads = positiveOption(args, 2, "INGEST_THREADS", mainThreads);
+        warmupThreads = positiveOption(args, 3, "WARMUP_THREADS", warmupThreads);
+        String totalOverride = System.getenv("LOAD_TOTAL_EVENTS");
+        if (totalOverride != null) {
+            int total = Integer.parseInt(totalOverride);
+            if (total <= warmupEvents || total > 2000000) throw new IllegalArgumentException("LOAD_TOTAL_EVENTS must exceed warmup and be <=2000000");
+            mainEvents = total - warmupEvents;
+        }
+        int targetRps = Integer.parseInt(System.getenv().getOrDefault("TARGET_RPS", "0"));
+        int warmupTargetRps = Integer.parseInt(System.getenv().getOrDefault("WARMUP_TARGET_RPS", Integer.toString(targetRps)));
+        new client.RequestPacer(targetRps); // Validate before opening connections.
+        new client.RequestPacer(warmupTargetRps);
         int expectedTotal = warmupEvents + mainEvents;
 
         HttpClient httpClient = HttpClient.newBuilder()
@@ -125,9 +140,22 @@ public class LoadClient {
         SwipeMetricsCollector metricsCollector =
                 new SwipeMetricsCollector();
 
+        // Preserve completed requests when a queue guard stops this process.
+        java.util.concurrent.atomic.AtomicBoolean metricsExported =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        final String partialCsvFilename = csvFilename.replace(".csv", "_partial.csv");
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (!metricsExported.get() && metricsCollector.getCount() > 0) {
+                try {
+                    metricsCollector.writeToCsv(partialCsvFilename);
+                } catch (IOException error) {
+                    System.err.println("Unable to save partial request metrics: " + error.getMessage());
+                }
+            }
+        }, "partial-request-metrics"));
+
         SubscriptionManager subscriptionManager =
                 new SubscriptionManager(
-                        httpClient,
                         WS_BASE_URL,
                         RESORT_COUNT
                 );
@@ -137,6 +165,10 @@ public class LoadClient {
         );
 
         System.out.println("Mode: " + mode);
+        System.out.println("Target RPS: " + (targetRps == 0 ? "unpaced" : targetRps));
+        System.out.println("Warmup Target RPS: " + (warmupTargetRps == 0 ? "unpaced" : warmupTargetRps));
+        System.out.println("Warmup Threads: " + warmupThreads);
+        System.out.println("Main Threads: " + mainThreads);
         System.out.println("Expected Requests: " + expectedTotal);
         System.out.println("HTTP Endpoint: " + BASE_URL);
         System.out.println("WebSocket Endpoint: " + WS_BASE_URL);
@@ -152,8 +184,8 @@ public class LoadClient {
 
         try {
             // Start WebSocket subscribers BEFORE HTTP traffic.
-            subscriptionManager.startAll();
             subscribersStarted = true;
+            subscriptionManager.startAll();
 
             System.out.println(
                     "\n========== WARMUP PHASE =========="
@@ -170,7 +202,7 @@ public class LoadClient {
                     sender,
                     successCount,
                     failureCount,
-                    metricsCollector
+                    metricsCollector, warmupTargetRps, "WARMUP"
             );
 
             warmupSeconds =
@@ -200,7 +232,7 @@ public class LoadClient {
                     sender,
                     successCount,
                     failureCount,
-                    metricsCollector
+                    metricsCollector, targetRps, "MAIN"
             );
 
             mainSeconds =
@@ -289,6 +321,10 @@ public class LoadClient {
             }
 
             System.out.println("Validation PASSED!");
+            // Persist request evidence before waiting for WebSocket drain.
+            System.out.println("\n========== EXPORTING CSV ==========");
+            metricsCollector.writeToCsv(csvFilename);
+            metricsExported.set(true);
 
             // Snapshot BEFORE the drain period.
             System.out.println(
@@ -331,11 +367,7 @@ public class LoadClient {
             metricsCollector.printLatencyStatistics();
             metricsCollector.printResortThroughput(totalSeconds);
 
-            System.out.println(
-                    "\n========== EXPORTING CSV =========="
-            );
 
-            metricsCollector.writeToCsv(csvFilename);
 
             System.out.println(
                     "\n========== LOAD TEST FINISHED =========="
@@ -352,23 +384,23 @@ public class LoadClient {
         }
     }
 
+    private static int positiveOption(String[] args, int index, String env, int fallback) {
+        String raw = args.length > index ? args[index] : System.getenv(env);
+        int value = raw == null ? fallback : Integer.parseInt(raw);
+        if (value < 1 || value > 4096) throw new IllegalArgumentException(env + " must be in 1..4096");
+        return value;
+    }
+
     private static void runPhase(
             int totalEvents,
             int threadCount,
             SwipeSender sender,
             AtomicInteger successCount,
             AtomicInteger failureCount,
-            SwipeMetricsCollector metricsCollector
+            SwipeMetricsCollector metricsCollector, int targetRps, String phase
     ) throws InterruptedException {
 
-        if (totalEvents % threadCount != 0) {
-            throw new IllegalArgumentException(
-                    "Events must be divisible by thread count"
-            );
-        }
-
-        int requestsPerThread =
-                totalEvents / threadCount;
+        if (threadCount < 1 || totalEvents < 1) throw new IllegalArgumentException("Positive events and threads required");
 
         BlockingQueue<SwipeEvent> queue =
                 new ArrayBlockingQueue<>(totalEvents);
@@ -401,6 +433,7 @@ public class LoadClient {
                 Executors.newFixedThreadPool(threadCount);
 
         List<Future<?>> futures = new ArrayList<>();
+        client.RequestPacer pacer = new client.RequestPacer(targetRps);
 
         for (int i = 0; i < threadCount; i++) {
             futures.add(
@@ -410,8 +443,8 @@ public class LoadClient {
                                     sender,
                                     successCount,
                                     failureCount,
-                                    requestsPerThread,
-                                    metricsCollector
+                                    targetRps > 0 ? -1 : RequestAllocation.requestsForWorker(totalEvents, threadCount, i),
+                                    metricsCollector, pacer, phase
                             )
                     )
             );
@@ -419,15 +452,18 @@ public class LoadClient {
 
         executor.shutdown();
 
+        // Allow each load-test phase to run for up to sixty minutes.
+        long phaseTimeoutSeconds = TimeUnit.MINUTES.toSeconds(60);
+        System.out.println("Phase worker timeout: " + phaseTimeoutSeconds + " seconds");
         boolean finished = executor.awaitTermination(
-                30,
-                TimeUnit.MINUTES
+                phaseTimeoutSeconds,
+                TimeUnit.SECONDS
         );
 
         if (!finished) {
             executor.shutdownNow();
             throw new IllegalStateException(
-                    "Workers did not finish within 30 minutes"
+                    "Workers did not finish within " + phaseTimeoutSeconds + " seconds"
             );
         }
 

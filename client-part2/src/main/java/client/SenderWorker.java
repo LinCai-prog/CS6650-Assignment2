@@ -20,6 +20,8 @@ public class SenderWorker implements Runnable {
     private final int requestsPerThread;
 
     private final SwipeMetricsCollector metricsCollector;
+    private final RequestPacer pacer;
+    private final String phase;
 
     public SenderWorker(
             BlockingQueue<SwipeEvent> queue,
@@ -27,7 +29,7 @@ public class SenderWorker implements Runnable {
             AtomicInteger successCount,
             AtomicInteger failureCount,
             int requestsPerThread,
-            SwipeMetricsCollector metricsCollector) {
+            SwipeMetricsCollector metricsCollector, RequestPacer pacer, String phase) {
 
         this.queue = queue;
         this.sender = sender;
@@ -37,20 +39,21 @@ public class SenderWorker implements Runnable {
 
         // Save shared metrics collector
         this.metricsCollector = metricsCollector;
+        this.pacer = pacer; this.phase = phase;
     }
 
     @Override
     public void run() {
 
-        for (int i = 0; i < requestsPerThread; i++) {
+        for (int i = 0; requestsPerThread < 0 || i < requestsPerThread; i++) {
 
             SwipeEvent event = queue.poll();
-
             if (event == null) {
-                throw new IllegalStateException(
-                        "Queue unexpectedly empty before worker completed its quota"
-                );
+                if (requestsPerThread < 0) return;
+                throw new IllegalStateException("Queue unexpectedly empty before worker completed its quota");
             }
+            try { pacer.acquire(); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); return; }
 
             // Record timestamp before sending
             Instant sendTimestamp = Instant.now();
@@ -134,7 +137,7 @@ public class SenderWorker implements Runnable {
                 responseTimestamp,
                 latencyMs,
                 statusCode,
-                event.getResortID()
+                event.getResortID(), event.getEventId(), phase
         );
 
         metricsCollector.record(metric);

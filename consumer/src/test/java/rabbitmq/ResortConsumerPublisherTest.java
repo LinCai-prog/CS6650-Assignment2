@@ -27,14 +27,11 @@ import static org.mockito.Mockito.*;
 class ResortConsumerPublisherTest {
 
     @Test
-    void shouldPublishUpdateAfterSuccessfulCommit()
+    void shouldAckAfterAggregationCommits()
             throws Exception {
 
         Channel channel = mock(Channel.class);
         LeaderboardStore store = mock(LeaderboardStore.class);
-
-        LeaderboardUpdatePublisher publisher =
-                mock(LeaderboardUpdatePublisher.class);
 
         when(channel.isOpen()).thenReturn(true);
 
@@ -71,8 +68,7 @@ class ResortConsumerPublisherTest {
                     new ResortConsumer(
                             channel,
                             store,
-                            executor,
-                            publisher
+                            executor
                     );
 
             consumer.start(3);
@@ -123,22 +119,7 @@ class ResortConsumerPublisherTest {
             // Both operations must have occurred.
             verify(store).processEvent(any());
 
-            verify(publisher).publish(
-                    "publisher-test-001",
-                    "3",
-                    "1"
-            );
-
-            // Check ordering: commit processing before publish.
-            org.mockito.InOrder order = inOrder(store, publisher);
-
-            order.verify(store).processEvent(any());
-            order.verify(publisher).publish(
-                    "publisher-test-001",
-                    "3",
-                    "1"
-            );
-
+            // Publication is handled by the persisted outbox, not this callback.
             verify(channel).basicAck(42L, false);
 
             verify(channel, never()).basicNack(

@@ -20,14 +20,15 @@ import validation.InvalidSwipeEventException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-public class ResortConsumer {
+public class ResortConsumer implements AutoCloseable {
 
     private final Channel channel;
     private final Gson gson = new Gson();
 
     private final ResortSerialExecutor serialExecutor;
-    private final LeaderboardUpdatePublisher updatePublisher;
     private final LeaderboardStore store;
+    private final service.BatchingSwipeProcessor batcher;
+    private final BatchAcknowledgements acknowledgements;
 
     private final TaskAdmissionGate admissionGate =
             new TaskAdmissionGate();
@@ -37,24 +38,25 @@ public class ResortConsumer {
             LeaderboardStore store,
             ResortSerialExecutor serialExecutor) {
 
-        this(
-                channel,
-                store,
-                serialExecutor,
-                null
-        );
-    }
-
-    public ResortConsumer(
-            Channel channel,
-            LeaderboardStore store,
-            ResortSerialExecutor serialExecutor,
-            LeaderboardUpdatePublisher updatePublisher) {
-
         this.channel = channel;
         this.store = store;
         this.serialExecutor = serialExecutor;
-        this.updatePublisher = updatePublisher;
+        this.batcher = null;
+        this.acknowledgements = null;
+    }
+
+    public ResortConsumer(Channel channel, service.BatchingSwipeProcessor batcher,
+                          ResortSerialExecutor serialExecutor) {
+        this.channel = channel;
+        this.store = null;
+        this.serialExecutor = serialExecutor;
+        this.batcher = batcher;
+        this.acknowledgements = new BatchAcknowledgements(channel,
+                ConsumerConfig.ACK_BATCH_SIZE, ConsumerConfig.ACK_FLUSH_MS);
+    }
+
+    @Override public void close() throws Exception {
+        if (acknowledgements != null) acknowledgements.close();
     }
 
     // Stop accepting new tasks during shutdown.
@@ -72,9 +74,14 @@ public class ResortConsumer {
         DeliverCallback deliverCallback =
                 (consumerTag, delivery) -> {
 
+                    // Capture before ACK bookkeeping, executor admission and parsing.
+                    final java.time.Instant receivedAt = java.time.Instant.now();
+                    final long receivedNanos = System.nanoTime();
+
                     long deliveryTag =
                             delivery.getEnvelope().getDeliveryTag();
 
+                    if (acknowledgements != null) acknowledgements.register(deliveryTag);
                     byte[] body = delivery.getBody();
 
                     Runnable task = () -> {
@@ -93,32 +100,23 @@ public class ResortConsumer {
                                     SwipeEvent.class
                             );
 
+                            if (event != null) event.markReceived(receivedAt, receivedNanos);
+
                             // Stage 2: Validate the event.
                             SwipeEventValidator.validate(
                                     event,
                                     resortId
                             );
 
-                            // Stage 3: Write to SQLite.
-                            //
-                            // processEvent() performs:
-                            // - Event ID deduplication
-                            // - Vertical accumulation
-                            // - Transaction commit
-                            //
-                            // Duplicate events return false.
-                            boolean isNewEvent =
-                                    store.processEvent(event);
-
-                            // Stage 4: Publish a leaderboard notification
-                            // only when a NEW event was committed.
-                            //
-                            // The publisher uses best-effort delivery.
-                            // Notification failure does not roll back
-                            // a successful SQLite transaction.
-                            if (isNewEvent) {
-                                publishLeaderboardUpdate(event);
+                            if (batcher != null) {
+                                batcher.submit(event).whenComplete((fresh, error) -> {
+                                    if (error == null) acknowledgements.committed(deliveryTag);
+                                    else nackSafely(deliveryTag, true);
+                                });
+                                return;
                             }
+                            // Compatibility path for a standalone single-event store.
+                            store.processEvent(event);
 
                         } catch (JsonParseException
                                  | InvalidSwipeEventException e) {
@@ -216,13 +214,13 @@ public class ResortConsumer {
             synchronized (channel) {
 
                 if (channel.isOpen()) {
-                    channel.basicNack(
-                            deliveryTag,
-                            false,
-                            requeue
-                    );
+                    channel.basicNack(deliveryTag, false, requeue);
+
+                } else {
+                    return;
                 }
             }
+            if (acknowledgements != null) acknowledgements.discarded(deliveryTag);
 
         } catch (IOException e) {
             System.err.println(
@@ -232,28 +230,4 @@ public class ResortConsumer {
         }
     }
 
-    private void publishLeaderboardUpdate(
-            SwipeEvent event) {
-
-        if (updatePublisher == null) {
-            return;
-        }
-
-        try {
-            updatePublisher.publish(
-                    event.getEventId(),
-                    event.getResortID(),
-                    event.getDayID()
-            );
-
-        } catch (Exception e) {
-
-            // SQLite has already committed.
-            // Preserve best-effort notification semantics.
-            System.err.println(
-                    "Leaderboard notification failed for event "
-                            + event.getEventId() + ": " + e
-            );
-        }
-    }
 }

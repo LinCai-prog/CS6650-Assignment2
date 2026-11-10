@@ -20,7 +20,13 @@ public final class RabbitMQConfig {
 
     public static final int RESORT_COUNT = 10;
 
-    public static final int CHANNEL_POOL_SIZE = 32;
+    public static final int CHANNEL_POOL_SIZE = channelPoolSize();
+
+    private static int channelPoolSize() {
+        int size = Integer.parseInt(System.getenv().getOrDefault("RABBITMQ_CHANNEL_POOL_SIZE", "32"));
+        if (size < 1 || size > 1024) throw new IllegalArgumentException("RABBITMQ_CHANNEL_POOL_SIZE must be in 1..1024");
+        return size;
+    }
 
     public static final int MESSAGE_TTL_MS = 600_000;
     public static final int QUEUE_MAX_LENGTH = 1_000_000;

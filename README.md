@@ -1,286 +1,112 @@
-# CS6650 Assignment 2 — SkiTrak Distributed System
+# CS6650 Assignment 2: real distributed leaderboards
 
-## Overview
-
-This project implements a distributed ski tracking and real-time leaderboard system for CS6650: Building Scalable Distributed Systems at Northeastern University.
-
-The system replaces the simulated backend from Assignment 1 with a real asynchronous processing pipeline using RabbitMQ, Java consumers, SQLite, and WebSocket notifications. Multiple HTTP ingest servers run behind an AWS Application Load Balancer.
-
-### Key Features
-
-- Horizontally scalable HTTP ingestion using AWS Application Load Balancer
-- RabbitMQ-based asynchronous event publishing and consumption
-- Connection and channel management for RabbitMQ publishers
-- Per-resort event processing and leaderboard aggregation
-- SQLite persistence with event-ID-based deduplication
-- Real-time leaderboard notifications through WebSocket
-- Multi-threaded load testing and performance measurement
-- Error handling, reconnection, and automated tests
-
-## System Architecture
+## Data flow
 
 ```text
-                       Load Testing Client
-                       HTTP + WebSocket
-                                |
-                                v
-                    AWS Application Load Balancer
-                                |
-             +------------------+------------------+
-             |                  |                  |
-             v                  v                  v
-        Ingest #1          Ingest #2          Ingest #3/#4
-             |                  |                  |
-             +------------------+------------------+
-                                |
-                                v
-                         RabbitMQ Broker
-                         skitrak.exchange
-                                |
-                     Resort-specific Queues
-                         resort.1–resort.10
-                                |
-                                v
-                         Consumer Service
-                                |
-                     Event Validation
-                     Deduplication
-                     Aggregation
-                                |
-                                v
-                          SQLite Database
-                                |
-                     Leaderboard Updates
-                                |
-                                v
-                       RabbitMQ Backplane
-                                |
-                                v
-                         WebSocket Server
-                                |
-                                v
-                       Subscribed Clients
+Client -> ALB -> [four ingest servers] -> RabbitMQ -> Consumer
+                                                        |
+                                       SQLite aggregation + outbox
+                                                        |
+                                        RabbitMQ broadcast backplane
+                                                        |
+                                    Ingest-local WebSocket subscribers
 ```
 
-The HTTP ingestion layer and asynchronous processing layer can operate independently. The RabbitMQ broker buffers events between producers and consumers, while the WebSocket service delivers leaderboard updates to subscribers.
+The client sends swipes and initiates WebSocket connections through the ALB.
+Each HTTP request goes to one ingest host. A WebSocket stays with the ingest host
+that accepted its upgrade. Changed standings travel from the consumer through
+the backplane to each ingest host, then back through the ALB to its subscribers.
 
-## Repository Structure
+## Modules
 
-```text
-CS6650-Assignment2/
-├── server-v2/
-│   ├── pom.xml
-│   ├── src/main/java/
-│   └── web/
-├── consumer/
-│   ├── pom.xml
-│   ├── src/main/java/
-│   └── src/test/java/
-├── client-part2/
-│   ├── pom.xml
-│   └── src/main/java/
-└── .gitignore
-```
-
-Additional deployment, monitoring, architecture, and AI usage documentation will be included with the final submission.
-
-## Components
-
-### 1. Ingest Server (`server-v2`)
-
-The ingest server is a Java Servlet application deployed on Apache Tomcat 9.
-
-Its primary responsibilities include:
-
-- Receiving and validating skier lift-ride requests
-- Looking up lift vertical-drop information
-- Constructing swipe-event messages
-- Publishing events to RabbitMQ
-- Managing RabbitMQ connections and pooled channels
-- Providing an HTTP health-check endpoint
-
-Important classes include `SkierServlet`, `SwipeEventMessage`, `RabbitMQManager`, `ChannelPool`, `SwipePublisher`, and `RabbitMQTopology`.
-
-### 2. Consumer and Leaderboard Service (`consumer`)
-
-The processing service consumes resort-specific events from RabbitMQ, validates events, updates persistent state, and publishes leaderboard notifications.
-
-Its primary responsibilities include:
-
-- Handling asynchronous RabbitMQ messages
-- Preserving the required per-resort processing order
-- Preventing duplicate aggregation through event IDs
-- Updating skier totals and leaderboard state
-- Persisting results to SQLite
-- Publishing and broadcasting leaderboard updates
-- Managing consumer concurrency and shutdown
-
-Important classes include `RabbitMQConsumerManager`, `ResortConsumer`, `ResortSerialExecutor`, `LeaderboardAggregator`, `SqliteLeaderboardStore`, and `LeaderboardWebSocketServer`.
-
-### 3. Load Testing Client (`client-part2`)
-
-The load testing client generates simulated lift-ride requests and measures the system's performance.
-
-It supports multiple workloads and collects:
-
-- HTTP request throughput
-- Successful and failed requests
-- Request latency (mean, median, P95, P99)
-- Per-resort throughput
-- WebSocket connection statistics
-- Leaderboard delivery and push-latency statistics
-- CSV performance output
-
-## Technologies
-
-| Layer | Technology |
+| Module | Responsibility |
 |---|---|
-| Programming language | Java 11 |
-| HTTP application server | Apache Tomcat 9 |
-| Messaging | RabbitMQ |
-| Database | SQLite |
-| Real-time communication | WebSocket |
-| Build system | Apache Maven |
-| Cloud infrastructure | AWS EC2 |
-| Load balancing | AWS Application Load Balancer |
-| Performance testing | Custom multithreaded Java client |
+| `leaderboard-common` | Immutable versioned leaderboard payload and snapshot serialization |
+| `server-v2` | HTTP ingestion, pooled RabbitMQ publishing, real WebSocket endpoint and per-host backplane |
+| `consumer` | Ordered aggregation, SQLite deduplication, conditional notifications, outbox retries and authoritative snapshots |
+| `client-part2` | HTTP load generation, ALB WebSocket subscriptions and metrics |
+| `deployment` | Deployment, rollback and ALB configuration procedures |
+| `monitoring` | Broker and host sampling, queue guard and verification workflow |
 
-## Building the Project
+## Build
 
-Prerequisites:
+Use Java 11 and Maven from this repository root:
 
-- Java 11
-- Apache Maven
-- RabbitMQ for integration and deployment
-- Apache Tomcat 9 for the servlet application
-
-Build each module independently:
-
-```bash
-cd server-v2
+```sh
 mvn clean package
-
-cd ../consumer
-mvn clean package
-
-cd ../client-part2
-mvn clean package
+java -ea -cp client-part2/target/classes:client-part2/target/test-classes websocket.LeaderboardUpdateTrackerTest
 ```
 
-Run the available consumer tests:
+Build artifacts:
 
-```bash
-cd consumer
-mvn test
+- `server-v2/target/ski-servlet-1.0-SNAPSHOT.war` (deploy as `server-v2.war`).
+- `consumer/target/consumer-1.0-SNAPSHOT.jar` (shaded executable consumer).
+
+Subset builds must include the shared module, for example
+`mvn -pl server-v2 -am package`. Environments where Mockito cannot attach its test
+agent can provide the cached Byte Buddy agent with Maven's `argLine` option.
+
+## Endpoints and client
+
+- HTTP: `/server-v2/skiers/{resort}/seasons/{season}/days/{day}/skiers/{skier}`.
+- WebSocket: `/server-v2/leaderboard` with `subscribe` / `unsubscribe` JSON.
+- Health: `/server-v2/health`; readiness includes the real leaderboard backplane.
+
+The client's defaults use the existing ALB for both HTTP and WebSocket traffic.
+Override them with `HTTP_BASE_URL` and `WS_BASE_URL` if needed.
+
+```sh
+java -cp client-part2/target/classes LoadClient smoke 30
 ```
 
-These commands describe the intended build workflow. A fresh-clone build and test run must still be performed as part of the final submission verification.
+Only the small smoke workload is shown here. Large benchmarks require monitoring
+and deliberate scheduling.
 
-## Runtime Configuration
+## Correctness and deployment
 
-RabbitMQ connection settings are provided through environment variables rather than hardcoded credentials.
+SQLite records event IDs, skier totals and pending leaderboard changes in one
+transaction. Only changes to the ordered top 10 generate notifications. A leader's
+score increase counts as a change even if rank is unchanged. A below-cutoff
+increase is persisted without a broadcast. Replayed event IDs change neither.
 
-The ingest server and consumer use `RABBITMQ_PASSWORD` from the process environment. The ingest deployment also uses RabbitMQ host, port, and username configuration.
+Every ingest host receives its own copy of changed standings. A new subscription
+requests a current snapshot from the processing host through RabbitMQ, using a
+correlation ID and an expiring request. Snapshot/update races and duplicate
+versions are handled locally; no ingest host copies SQLite or fabricates rankings.
 
-Do not commit production credentials, private SSH keys, or environment files containing secrets.
+The four ingest hosts run the real endpoint. The old processing-host WebSocket
+service is retired; the consumer and snapshot responder remain active. Existing
+RabbitMQ connection pooling, remote credentials and service configuration are
+preserved. Credentials and private keys must stay outside the repository.
 
-Deployment-specific service configuration, database paths, and connection instructions will be documented separately.
+See [the current deployment guide](deployment/INGEST_WEBSOCKETS.md),
+[architecture](architecture/ARCHITECTURE.md), and
+[the benchmark results](monitoring/RESULTS.md).
+The earlier performance report contains historical measurements from the former
+deployment and must not be treated as a benchmark of this revised code.
 
-## AWS Deployment
+## Current validation
 
-The tested deployment uses:
+The Java 11 Maven build and 83 automated tests passed before submission. Four
+client self-checks cover allocation, shared workload, pacing and payload tracking.
+The measured 500K and 1M results are in [monitoring/RESULTS.md](monitoring/RESULTS.md).
+Use [the monitoring scripts](monitoring/README.md) for broker and host sampling
+and to guard a load client. Raw evidence remains separate from source control.
 
-- Four EC2 ingest instances running Tomcat 9
-- One AWS Application Load Balancer for HTTP ingestion
-- One RabbitMQ EC2 instance
-- One processing EC2 instance hosting the consumer, SQLite, and WebSocket services
+The ALB script documents the intended health checks, idle timeout and cookie
+settings. Routing and live WebSockets were observed; an authenticated export of
+all ALB settings and controlled failover testing were not part of the final runs.
+Consumer worker count is configurable, but there is no automatic load-driven
+worker scaling. The measured rates do not establish unlimited-input capacity.
 
-The processing service and WebSocket service run as separate systemd-managed applications.
+## Consumer and client tuning
 
-The application exposes:
-
-```text
-GET /server-v2/health
-POST /server-v2/skiers/...
-```
-
-The RabbitMQ broker uses resort-specific queues (`resort.1` through `resort.10`) and a separate leaderboard notification queue.
-
-## Performance Testing
-
-The performance evaluation includes:
-
-| Configuration | Requests | Status |
-|---|---:|---|
-| Single ingest server | 500,000 | Completed and verified |
-| Two ingest servers | 500,000 | Completed and verified |
-| Four ingest servers | 500,000 | Pending final result |
-| Four ingest servers — stress test | 1,000,000 | Pending |
-
-### Verified 500K Benchmark Results
-
-| Metric | 1 Ingest | 2 Ingest |
-|---|---:|---:|
-| Successful HTTP requests | 500,000 | 500,000 |
-| Failed HTTP requests | 0 | 0 |
-| Overall throughput | 676.45 req/s | 781.87 req/s |
-| Main-phase throughput | 869.08 req/s | 825.23 req/s |
-| Mean HTTP latency | 119.17 ms | 116.21 ms |
-| P95 HTTP latency | 301.22 ms | 214.52 ms |
-| P99 HTTP latency | 505.84 ms | 521.46 ms |
-
-Both completed configurations successfully persisted 500,000 new events to SQLite and drained their RabbitMQ business queues.
-
-The two-instance configuration achieved higher overall throughput and lower HTTP P95 latency. However, main-phase throughput did not scale linearly with the number of ingest servers.
-
-WebSocket push latency also increased substantially during the larger tests, indicating that the notification path requires separate performance analysis.
-
-### Running the Load Client
-
-In IntelliJ IDEA, run `LoadClient` with one of the supported arguments:
-
-```text
-smoke 30
-medium 30
-full 120
-```
-
-The `full 120` configuration performs 500,000 HTTP requests, with 32,000 warmup requests and 468,000 main-phase requests, followed by a 120-second WebSocket observation period.
-
-The HTTP endpoint and WebSocket connection settings must match the deployment environment.
-
-## Reliability and Data Integrity
-
-The system uses event IDs and persistent deduplication to prevent repeated processing from increasing skier totals more than once.
-
-The completed 500K tests were validated using:
-
-1. HTTP response counts and status distributions
-2. CSV metrics output
-3. SQLite `processed_events` record counts
-4. RabbitMQ queue drain verification
-5. WebSocket connection and delivery statistics
-
-Additional reliability tests, including shutdown-race verification, must be reported according to their actual test outcomes.
-
-## Security Considerations
-
-- RabbitMQ credentials are supplied through environment variables.
-- SSH private keys and production secrets are excluded from version control.
-- SQLite runtime files and large generated performance CSV files are excluded from the source repository.
-- Public deployment IP addresses should not be treated as permanent service identifiers.
-
-## Assignment Documentation
-
-The final submission will include:
-
-- Architecture diagram and message-processing sequence diagram
-- RabbitMQ queue topology and connection-locality design
-- Load-balancer configuration and performance evidence
-- Performance results and scalability analysis
-- Deployment and monitoring instructions
-- AI usage reflection in `AI_USAGE.md`
-
-## Repository
-
-https://github.com/LinCai-prog/CS6650-Assignment2
+Consumer batching, prefetch, worker count, ACK batching and SQLite checkpoint/cache
+settings are configurable; the publisher channel pool is configurable per ingest.
+See [the current tuning environment](deployment/consumer-tuning-current.env) and [architecture](architecture/ARCHITECTURE.md) for the measured configuration and failure behavior.
+`LoadClient full 120 128 32` runs the fixed 500K workload with 128 main threads and
+32 warmup threads. `TARGET_RPS` limits the main phase; optional
+`WARMUP_TARGET_RPS` overrides only the warmup and otherwise inherits `TARGET_RPS`.
+`LOAD_TOTAL_EVENTS` changes the total while retaining the selected mode's warmup
+count. The request CSV is saved after HTTP completion, before WebSocket drain.
+Use the monitored runner for larger workloads.

@@ -34,15 +34,18 @@ public class SwipeMetricsCollector {
     public void writeToCsv(String filename)
             throws IOException {
 
+        // A pause can leave HTTP responses arriving during export.
+        // Count and write the same immutable snapshot.
+        List<SwipeMetric> snapshot = new ArrayList<>(metrics);
         try (BufferedWriter writer =
                      Files.newBufferedWriter(Path.of(filename))) {
 
             writer.write(
-                    "timestamp,requestType,latency,statusCode,resortID"
+                    "timestamp,requestType,latency,statusCode,resortID,eventId,responseTimestamp,phase"
             );
             writer.newLine();
 
-            for (SwipeMetric metric : metrics) {
+            for (SwipeMetric metric : snapshot) {
 
                 writer.write(
                         metric.getSendTimestamp()
@@ -51,7 +54,8 @@ public class SwipeMetricsCollector {
                                 + ","
                                 + metric.getStatusCode()
                                 + ","
-                                + metric.getResortID()
+                                + metric.getResortID() + "," + metric.getEventId()
+                                + "," + metric.getResponseTimestamp() + "," + metric.getPhase()
                 );
 
                 writer.newLine();
@@ -60,7 +64,7 @@ public class SwipeMetricsCollector {
 
         System.out.println(
                 "CSV saved: " + filename
-                        + " (" + metrics.size() + " records)"
+                        + " (" + snapshot.size() + " records)"
         );
     }
 

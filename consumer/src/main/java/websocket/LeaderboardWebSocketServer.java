@@ -2,7 +2,6 @@
 package websocket;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
@@ -12,10 +11,10 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 import storage.LeaderboardStore;
+import model.LeaderboardUpdate;
 
 import java.net.InetSocketAddress;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -40,6 +39,10 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
     private final ConcurrentHashMap<WebSocket, String> sessions =
             new ConcurrentHashMap<>();
 
+    // Access each connection's versions while holding that connection's lock.
+    private final Map<WebSocket, Map<SubscriptionKey, Long>> sentVersions =
+            new ConcurrentHashMap<>();
+
     public LeaderboardWebSocketServer(
             InetSocketAddress address,
             LeaderboardStore store) {
@@ -48,37 +51,12 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
         this.store = Objects.requireNonNull(store);
     }
 
-    private JsonArray buildLeaderboardEntries(
-            SubscriptionKey key) throws Exception {
-
-        List<Map.Entry<String, Long>> top10 =
-                store.getTopN(
-                        key.getResortId(),
-                        key.getDayId(),
-                        10
-                );
-
-        JsonArray entries = new JsonArray();
-        int rank = 1;
-
-        for (Map.Entry<String, Long> entry : top10) {
-            JsonObject skier = new JsonObject();
-
-            skier.addProperty("rank", rank++);
-            skier.addProperty("skierId", entry.getKey());
-            skier.addProperty("totalVertical", entry.getValue());
-
-            entries.add(skier);
-        }
-
-        return entries;
-    }
-
     private void sendInitialSnapshot(
             WebSocket conn,
             SubscriptionKey key) throws Exception {
 
-        JsonObject snapshot = new JsonObject();
+        LeaderboardUpdate state = store.getSnapshot(key.getResortId(), key.getDayId());
+        JsonObject snapshot = state.toJson();
 
         snapshot.addProperty(
                 "type",
@@ -95,18 +73,16 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
                 key.getDayId()
         );
 
-        snapshot.add(
-                "top10",
-                buildLeaderboardEntries(key)
-        );
-
         if (conn.isOpen()) {
             conn.send(gson.toJson(snapshot));
+            sentVersions.get(conn).put(key, state.getVersion());
         }
     }
 
     public void broadcastLeaderboardUpdate(
-            SubscriptionKey key) throws Exception {
+            LeaderboardUpdate change) throws Exception {
+
+        SubscriptionKey key = new SubscriptionKey(change.getResortId(), change.getDayId());
 
         Set<String> subscribers =
                 subscriptionManager.getSubscribers(key);
@@ -115,9 +91,7 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
             return;
         }
 
-        JsonArray entries = buildLeaderboardEntries(key);
-
-        JsonObject update = new JsonObject();
+        JsonObject update = change.toJson();
 
         update.addProperty(
                 "type",
@@ -134,16 +108,14 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
                 key.getDayId()
         );
 
-        update.add("top10", entries);
-
-        // Timestamp is created after reading the leaderboard
-        // and immediately before broadcasting the update.
+        // Keep delivery time separate from source and aggregation timestamps.
         update.addProperty(
                 "serverTimestamp",
                 Instant.now().toString()
         );
 
         String json = gson.toJson(update);
+        boolean sendFailed = false;
 
         for (Map.Entry<WebSocket, String> session
                 : sessions.entrySet()) {
@@ -160,11 +132,14 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
                         && sessionId.equals(sessions.get(conn))
                         && subscriptionManager
                         .getSubscriptions(sessionId)
-                        .contains(key)) {
+                        .contains(key)
+                        && change.getVersion() > sentVersions.get(conn).getOrDefault(key, -1L)) {
 
                     try {
                         conn.send(json);
+                        sentVersions.get(conn).put(key, change.getVersion());
                     } catch (Exception e) {
+                        sendFailed = true;
                         System.err.println(
                                 "Failed to send leaderboard update to "
                                         + sessionId + ": " + e
@@ -172,6 +147,10 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
                     }
                 }
             }
+        }
+
+        if (sendFailed) {
+            throw new java.io.IOException("One or more WebSocket sends failed; retry notification");
         }
 
         System.out.println(
@@ -188,6 +167,7 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
             String sessionId = UUID.randomUUID().toString();
 
             sessions.put(conn, sessionId);
+            sentVersions.put(conn, new java.util.HashMap<>());
 
             System.out.println(
                     "WebSocket connected: " + sessionId
@@ -269,6 +249,7 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
                             sessionId,
                             key
                     );
+                    sentVersions.get(conn).remove(key);
 
                     response.addProperty(
                             "type",
@@ -316,6 +297,7 @@ public class LeaderboardWebSocketServer extends WebSocketServer {
 
         synchronized (conn) {
             String sessionId = sessions.remove(conn);
+            sentVersions.remove(conn);
 
             if (sessionId != null) {
                 subscriptionManager.removeSession(sessionId);

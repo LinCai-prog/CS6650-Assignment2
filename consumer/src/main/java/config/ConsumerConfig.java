@@ -21,7 +21,20 @@ public final class ConsumerConfig {
 
     public static final String SWIPE_EXCHANGE = "skitrak.exchange";
 
-    public static final int PREFETCH_COUNT = 10;
+    public static final int PREFETCH_COUNT = positive("CONSUMER_PREFETCH", 50);
+    public static final int DB_BATCH_SIZE = positive("DB_BATCH_SIZE", 50);
+    public static final int DB_BATCH_WAIT_MS = positive("DB_BATCH_WAIT_MS", 5);
+    public static final int SQLITE_CACHE_KIB = positive("SQLITE_CACHE_KIB", 65536);
+    public static final int SQLITE_CHECKPOINT_PAGES = positive("SQLITE_CHECKPOINT_PAGES", 16384);
+    public static final int SQLITE_CHECKPOINT_MS = positive("SQLITE_CHECKPOINT_MS", 1000);
+    public static final int ACK_BATCH_SIZE = positive("ACK_BATCH_SIZE", 25);
+    public static final int ACK_FLUSH_MS = positive("ACK_FLUSH_MS", 5);
+
+    private static int positive(String name, int fallback) {
+        int value = Integer.parseInt(System.getenv().getOrDefault(name, String.valueOf(fallback)));
+        if (value < 1) throw new IllegalArgumentException(name + " must be positive");
+        return value;
+    }
 
 
     public static final int RESORT_COUNT =
@@ -30,8 +43,6 @@ public final class ConsumerConfig {
             );
 
     public static final int WORKER_THREADS =
-            Integer.parseInt(
-                    System.getenv().getOrDefault("CONSUMER_THREADS", "10")
-            );
+            positive("CONSUMER_THREADS", 10);
 
 }

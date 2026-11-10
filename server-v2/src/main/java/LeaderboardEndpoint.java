@@ -1,60 +1,26 @@
-import com.google.gson.JsonParser;
-
+import leaderboard.LeaderboardLifecycle;
+import leaderboard.LeaderboardSessions;
 import javax.websocket.*;
-import javax.websocket.server.PathParam;
 import javax.websocket.server.ServerEndpoint;
-import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
 
-@ServerEndpoint("/leaderboard/{resortID}")
+/** The ALB routes this upgrade to an ingest host; subscriptions stay local there. */
+@ServerEndpoint("/leaderboard")
 public class LeaderboardEndpoint {
-
-    // resortID -> sessions subscribed to that resort
-    private static final Map<String, Set<Session>> subscribers = new ConcurrentHashMap<>();
-    private static final ScheduledExecutorService pusher =
-            Executors.newSingleThreadScheduledExecutor();
-
-    static {
-        // Dummy: every 500ms, push a synthetic top-N to each resort's subscribers.
-        pusher.scheduleAtFixedRate(LeaderboardEndpoint::pushAll, 500, 500, TimeUnit.MILLISECONDS);
-    }
-
+    private LeaderboardSessions sessions;
     @OnOpen
-    public void onOpen(Session session, @PathParam("resortID") String resortID) {
-        subscribers.computeIfAbsent(resortID, k -> ConcurrentHashMap.newKeySet()).add(session);
-    }
-
-    @OnClose
-    public void onClose(Session session, @PathParam("resortID") String resortID) {
-        Optional.ofNullable(subscribers.get(resortID)).ifPresent(s -> s.remove(session));
-    }
-
-    @OnError
-    public void onError(Session session, Throwable t) {
-        // log, then clean up the session
-    }
-
-    private static void pushAll() {
-        for (Map.Entry<String, Set<Session>> e : subscribers.entrySet()) {
-            String json = syntheticLeaderboard(e.getKey()); // canned/random top-N + serverTimestamp
-            for (Session s : e.getValue()) {
-                if (s.isOpen()) s.getAsyncRemote().sendText(json);
-            }
+    public void onOpen(Session session) throws java.io.IOException {
+        try { sessions = LeaderboardLifecycle.sessions(); sessions.open(session); }
+        catch (IllegalStateException unavailable) {
+            session.close(new CloseReason(CloseReason.CloseCodes.TRY_AGAIN_LATER, "Leaderboard service not ready"));
         }
     }
-
-    private static String syntheticLeaderboard(String resortID){
-
-        String serverTimestamp = Instant.now().toString();
-
-        return JsonParser.parseString("{\n" +
-                "  \"resortID\": \"" + resortID + "\",\n" +
-                "  \"serverTimestamp\": \""+ serverTimestamp + "\",\n" +
-                "  \"top\": [\n" +
-                "    { \"rank\": 1, \"skierID\": 40213, \"vertical\": 44120 },\n" +
-                "    { \"rank\": 2, \"skierID\": 11872, \"vertical\": 43880 }\n" +
-                "  ]\n" +
-                "}").toString();
+    @OnMessage
+    public void onMessage(Session session, String message) { if (sessions != null) sessions.message(session, message); }
+    @OnClose
+    public void onClose(Session session) { if (sessions != null) sessions.close(session); }
+    @OnError
+    public void onError(Session session, Throwable error) {
+        if (sessions != null) sessions.close(session);
+        try { if (session.isOpen()) session.close(); } catch (Exception ignored) { }
     }
 }

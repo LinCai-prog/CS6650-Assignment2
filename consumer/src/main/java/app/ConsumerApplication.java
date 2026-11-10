@@ -6,6 +6,7 @@ import config.ConsumerConfig;
 import rabbitmq.RabbitMQConsumerManager;
 import rabbitmq.ResortConsumer;
 import rabbitmq.LeaderboardUpdatePublisher;
+import rabbitmq.LeaderboardOutboxDispatcher;
 
 import java.util.concurrent.CountDownLatch;
 import storage.LeaderboardStore;
@@ -36,10 +37,8 @@ public class ConsumerApplication {
         manager.connect();
 
 
-        Channel publisherChannel = manager.createChannel();
-
         LeaderboardUpdatePublisher updatePublisher =
-                new LeaderboardUpdatePublisher(publisherChannel);
+                new LeaderboardUpdatePublisher(manager::createChannel);
 
         System.out.println(
                 "Leaderboard Update Publisher initialized."
@@ -60,7 +59,7 @@ public class ConsumerApplication {
              resortId++) {
 
             ResortSerialExecutor serialExecutor =
-                    new ResortSerialExecutor(workerPool);
+                    new ResortSerialExecutor(workerPool, ConsumerConfig.PREFETCH_COUNT);
 
             resortExecutors.put(resortId, serialExecutor);
         }
@@ -78,13 +77,11 @@ public class ConsumerApplication {
         );
 
 
-        Path dataDirectory = Path.of("data");
-        Files.createDirectories(dataDirectory);
+        Path databasePath = Path.of(System.getenv().getOrDefault(
+                "LEADERBOARD_DB_PATH", "data/leaderboard.db")).toAbsolutePath();
+        Files.createDirectories(databasePath.getParent());
 
-        Path databasePath =
-                dataDirectory.resolve("leaderboard.db");
-
-        LeaderboardStore store =
+        SqliteLeaderboardStore store =
                 new SqliteLeaderboardStore(databasePath.toString());
 
         System.out.println(
@@ -92,6 +89,25 @@ public class ConsumerApplication {
                         + databasePath.toAbsolutePath()
         );
 
+
+        service.BatchingSwipeProcessor batcher = new service.BatchingSwipeProcessor(store,
+                ConsumerConfig.DB_BATCH_SIZE, ConsumerConfig.DB_BATCH_WAIT_MS,
+                Math.multiplyExact(ConsumerConfig.PREFETCH_COUNT, ConsumerConfig.RESORT_COUNT));
+        System.out.println("Batch tuning: prefetch=" + ConsumerConfig.PREFETCH_COUNT
+                + ", db batch=" + ConsumerConfig.DB_BATCH_SIZE + ", db wait ms=" + ConsumerConfig.DB_BATCH_WAIT_MS
+                + ", ack batch=" + ConsumerConfig.ACK_BATCH_SIZE + ", ack flush ms=" + ConsumerConfig.ACK_FLUSH_MS);
+        System.out.println("SQLite tuning: cache KiB=" + ConsumerConfig.SQLITE_CACHE_KIB
+                + ", automatic checkpoint pages=" + ConsumerConfig.SQLITE_CHECKPOINT_PAGES
+                + ", background checkpoint ms=" + ConsumerConfig.SQLITE_CHECKPOINT_MS);
+        Channel snapshotChannel = manager.createChannel();
+        new rabbitmq.LeaderboardSnapshotResponder(snapshotChannel, store).start();
+
+        LeaderboardOutboxDispatcher dispatcher =
+                new LeaderboardOutboxDispatcher(store, updatePublisher);
+        dispatcher.start();
+        var metricsReporter = Executors.newSingleThreadScheduledExecutor();
+        metricsReporter.scheduleWithFixedDelay(
+                () -> System.out.println(store.getMetricsSummary()), 5, 5, TimeUnit.SECONDS);
 
         List<Channel> channels = new ArrayList<>();
         Map<Channel, String> consumerTags = new HashMap<>();
@@ -107,9 +123,8 @@ public class ConsumerApplication {
             ResortConsumer consumer =
                     new ResortConsumer(
                             channel,
-                            store,
-                            resortExecutors.get(resortId),
-                            updatePublisher
+                            batcher,
+                            resortExecutors.get(resortId)
                     );
 
             consumers.add(consumer);
@@ -126,6 +141,9 @@ public class ConsumerApplication {
 
             System.out.println("Shutting down ConsumerApplication...");
 
+            metricsReporter.shutdownNow();
+            try { if (snapshotChannel.isOpen()) snapshotChannel.close(); }
+            catch (Exception e) { System.err.println("Snapshot channel close failed: " + e.getClass().getSimpleName()); }
             // Step 0: Prevent callbacks from admitting new tasks.
             for (ResortConsumer consumer : consumers) {
                 consumer.stopAccepting();
@@ -177,8 +195,26 @@ public class ConsumerApplication {
                 );
             }
 
-            // Step 4: Close SQLite after workers terminate.
-            if (workersTerminated) {
+            boolean batcherTerminated = false;
+            try { batcher.close(); batcherTerminated = true; }
+            catch (Exception e) { System.err.println("Database writer shutdown failed: " + e); }
+            for (ResortConsumer consumer : consumers) {
+                try { consumer.close(); }
+                catch (Exception e) { System.err.println("ACK flush shutdown failed: " + e); }
+            }
+            System.out.println(store.getMetricsSummary());
+            // Stop publication before closing its SQLite connection or channel.
+            boolean dispatcherTerminated = false;
+            try {
+                dispatcher.close();
+                dispatcherTerminated = true;
+            } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                System.err.println("Failed to stop leaderboard dispatcher: " + e);
+            }
+
+            // Step 4: Close SQLite after workers and dispatcher terminate.
+            if (workersTerminated && batcherTerminated && dispatcherTerminated) {
                 try {
                     store.close();
                     System.out.println(
@@ -201,9 +237,7 @@ public class ConsumerApplication {
             // Step 5: Close the dedicated publisher channel.
             // Workers should have finished before this point.
             try {
-                if (publisherChannel.isOpen()) {
-                    publisherChannel.close();
-                }
+                updatePublisher.close();
 
                 System.out.println(
                         "Leaderboard Publisher Channel closed."

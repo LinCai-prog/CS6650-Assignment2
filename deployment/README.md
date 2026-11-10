@@ -1,3 +1,5 @@
+> Current deployment instructions: [INGEST_WEBSOCKETS.md](INGEST_WEBSOCKETS.md). The separate processing-host WebSocket service described below is the previous architecture and is retained only as historical deployment/rollback information.
+
 # AWS Deployment Guide
 
 ## 1. Architecture Overview

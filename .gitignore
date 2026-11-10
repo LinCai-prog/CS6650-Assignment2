@@ -34,3 +34,7 @@ swipe_metrics_*.csv
 # Logs
 *.log
 logs/
+
+# Keep generated benchmark evidence local; tracked historical summaries remain.
+/performance/*
+__pycache__/

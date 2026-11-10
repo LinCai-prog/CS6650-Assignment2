@@ -35,6 +35,10 @@ public class LeaderboardSubscriber implements WebSocket.Listener {
     private final String dayID;
 
     private final AtomicInteger messageCount = new AtomicInteger();
+    private final AtomicInteger distinctChangeCount = new AtomicInteger();
+    private final AtomicInteger invalidUpdateCount = new AtomicInteger();
+    private final AtomicInteger staleUpdateCount = new AtomicInteger();
+    private final LeaderboardUpdateTracker updateTracker = new LeaderboardUpdateTracker();
     private final AtomicInteger connectionCount = new AtomicInteger();
     private final AtomicInteger reconnectionCount = new AtomicInteger();
 
@@ -113,6 +117,7 @@ public class LeaderboardSubscriber implements WebSocket.Listener {
     @Override
     public void onOpen(WebSocket socket) {
         this.webSocket = socket;
+        updateTracker.reset();
 
         if (!running) {
             socket.sendClose(
@@ -200,6 +205,15 @@ public class LeaderboardSubscriber implements WebSocket.Listener {
         }
 
         if ("leaderboard_snapshot".equals(type)) {
+            if (Integer.toString(resortID).equals(extract(RESORT_PATTERN, message))
+                    && dayID.equals(extract(DAY_PATTERN, message))) {
+                try {
+                    updateTracker.accept(message, true);
+                } catch (IllegalArgumentException e) {
+                    invalidUpdateCount.incrementAndGet();
+                    System.err.println("Invalid leaderboard snapshot: " + e.getMessage());
+                }
+            }
             return;
         }
 
@@ -225,6 +239,14 @@ public class LeaderboardSubscriber implements WebSocket.Listener {
 
         Instant receiveTime = Instant.now();
         messageCount.incrementAndGet();
+        try {
+            var result = updateTracker.accept(message, false);
+            if (result == LeaderboardUpdateTracker.Result.CHANGED) distinctChangeCount.incrementAndGet();
+            if (result == LeaderboardUpdateTracker.Result.STALE) staleUpdateCount.incrementAndGet();
+        } catch (IllegalArgumentException e) {
+            invalidUpdateCount.incrementAndGet();
+            System.err.println("Invalid leaderboard update: " + e.getMessage());
+        }
 
         String timestamp = extract(TIMESTAMP_PATTERN, message);
 
@@ -258,6 +280,10 @@ public class LeaderboardSubscriber implements WebSocket.Listener {
             );
         }
     }
+
+    public int getDistinctChangeCount() { return distinctChangeCount.get(); }
+    public int getInvalidUpdateCount() { return invalidUpdateCount.get(); }
+    public int getStaleUpdateCount() { return staleUpdateCount.get(); }
 
     private static String extract(Pattern pattern, String message) {
         Matcher matcher = pattern.matcher(message);

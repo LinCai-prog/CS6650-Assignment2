@@ -13,14 +13,16 @@ public class SubscriptionManager {
             new ArrayList<>();
 
     public SubscriptionManager(
-            HttpClient client,
             String baseUrl,
             int resortCount) {
 
         for (int i = 1; i <= resortCount; i++) {
             subscribers.add(
                     new LeaderboardSubscriber(
-                            client,
+                            HttpClient.newBuilder()
+                                    .cookieHandler(new java.net.CookieManager(null, java.net.CookiePolicy.ACCEPT_ALL))
+                                    .connectTimeout(java.time.Duration.ofSeconds(10))
+                                    .version(HttpClient.Version.HTTP_1_1).build(),
                             baseUrl,
                             i
                     )
@@ -41,6 +43,8 @@ public class SubscriptionManager {
             try {
                 subscriber.awaitSubscribed(Duration.ofSeconds(20));
             } catch (Exception e) {
+                stopAll();
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 throw new IllegalStateException(
                         "WebSocket subscription failed for resort "
                                 + subscriber.getResortID(),
@@ -67,6 +71,9 @@ public class SubscriptionManager {
         );
 
         int totalMessages = 0;
+        int distinctChanges = 0;
+        int invalidUpdates = 0;
+        int staleUpdates = 0;
         int totalConnections = 0;
         int totalReconnections = 0;
 
@@ -88,6 +95,9 @@ public class SubscriptionManager {
             );
 
             totalMessages += messageCount;
+            distinctChanges += subscriber.getDistinctChangeCount();
+            invalidUpdates += subscriber.getInvalidUpdateCount();
+            staleUpdates += subscriber.getStaleUpdateCount();
             totalConnections += subscriber.getConnectionCount();
             totalReconnections += subscriber.getReconnectionCount();
 
@@ -138,6 +148,10 @@ public class SubscriptionManager {
                 "Total Leaderboard Updates Delivered: "
                         + totalMessages
         );
+
+        System.out.println("Distinct standings changes received: " + distinctChanges);
+        System.out.println("Invalid leaderboard payloads: " + invalidUpdates);
+        System.out.println("Duplicate or older versions received: " + staleUpdates);
 
         System.out.println(
                 "\n========== PUSH LATENCY STATISTICS =========="

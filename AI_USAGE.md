@@ -185,3 +185,11 @@ I remain responsible for reviewing the code, understanding the implementation, v
 ## 8. Repository
 
 https://github.com/LinCai-prog/CS6650-Assignment2
+
+## 9. Final benchmark follow-up
+
+Codex helped implement and review the ingest-local WebSocket backplane, transactional aggregation/outbox, split consumer timing, guarded benchmark runner and independent warmup pacing. The final metrics and screenshots came from measured runs; the 1M report distinguishes the 236 recorded update frames from 237 database version changes.
+
+Two accepted decisions in the final work were using a broadcast backplane to reach the ingest host that owns a subscription, and validating data integrity by matching event IDs after drain rather than treating HTTP 201 as proof of aggregation. The measured evidence includes real snapshots and completed event-ID checks.
+
+Two recommendations had to be corrected by testing. A passing 900/s 50K screen was not enough to certify 500K: the long run averaged 140.957 ms. Also, the two-ingest 800/s success did not justify assuming the same rate would pass with four ingests: the four-ingest attempt stopped during warmup at depth 1,004. The next accepted plan included a 300/s warmup and 600/s main phase, verified first at 100K and then at 1M. The comparison does not isolate the effect of pacing from all other run-to-run conditions. All warmup events were included in the final statistics.

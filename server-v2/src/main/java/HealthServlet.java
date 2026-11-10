@@ -13,8 +13,12 @@ public class HealthServlet extends HttpServlet {
         res.setContentType("application/json");
         res.setCharacterEncoding("UTF-8");
 
-        res.setStatus(HttpServletResponse.SC_OK);
-
-        res.getWriter().write("{\"status\":\"ok\"}");
+        boolean ready = leaderboard.LeaderboardLifecycle.isReady();
+        res.setStatus(ready ? HttpServletResponse.SC_OK : HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+        json.addProperty("status", ready ? "ok" : "starting");
+        json.addProperty("leaderboardReady", ready);
+        json.addProperty("serverId", leaderboard.LeaderboardLifecycle.serverId());
+        res.getWriter().write(json.toString());
     }
 }

@@ -26,7 +26,7 @@ import static org.mockito.Mockito.*;
 class ResortConsumerPostCommitTest {
 
     @Test
-    void shouldAckWhenLeaderboardQueryFailsAfterCommit()
+    void shouldAckCommittedSwipeWithoutQueryingLeaderboardAgain()
             throws Exception {
 
         Channel channel = mock(Channel.class);
@@ -117,10 +117,12 @@ class ResortConsumerPostCommitTest {
             // Wait for the asynchronous worker to ACK.
             assertTrue(
                     ackObserved.await(5, TimeUnit.SECONDS),
-                    "Consumer did not ACK after query failure"
+                    "Consumer did not ACK the committed swipe"
             );
 
             verify(store).processEvent(any());
+            verify(store, never()).getTotalVertical(anyString(), anyString(), anyString());
+            verify(store, never()).getTopN(anyString(), anyString(), anyInt());
 
             verify(channel, times(1))
                     .basicAck(42L, false);

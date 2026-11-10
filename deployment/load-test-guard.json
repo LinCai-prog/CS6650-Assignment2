@@ -1,0 +1,9 @@
+{
+  "queueStopThreshold": 1000,
+  "comparison": ">",
+  "scope": "each resort Ready + Unacked",
+  "sampleIntervalSeconds": 1,
+  "onBreach": "stop new client requests and retries immediately; leave consumers running",
+  "reportOnlyOnPass": true,
+  "averageLagLimitMs": 100
+}

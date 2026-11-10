@@ -193,3 +193,9 @@ Codex helped implement and review the ingest-local WebSocket backplane, transact
 Two accepted decisions in the final work were using a broadcast backplane to reach the ingest host that owns a subscription, and validating data integrity by matching event IDs after drain rather than treating HTTP 201 as proof of aggregation. The measured evidence includes real snapshots and completed event-ID checks.
 
 Two recommendations had to be corrected by testing. A passing 900/s 50K screen was not enough to certify 500K: the long run averaged 140.957 ms. Also, the two-ingest 800/s success did not justify assuming the same rate would pass with four ingests: the four-ingest attempt stopped during warmup at depth 1,004. The next accepted plan included a 300/s warmup and 600/s main phase, verified first at 100K and then at 1M. The comparison does not isolate the effect of pacing from all other run-to-run conditions. All warmup events were included in the final statistics.
+
+## 10. Codex conversation reference
+
+[Inspect leaderboard WebSocket updates](codex://threads/01a1c23b-731f-7a10-a6b4-a76748d21ecb)
+
+Copyable Codex address: `codex://threads/01a1c23b-731f-7a10-a6b4-a76748d21ecb`

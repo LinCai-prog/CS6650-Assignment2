@@ -67,11 +67,15 @@ public class LeaderboardSubscriber implements WebSocket.Listener {
             HttpClient httpClient,
             String baseUrl,
             int resortID) {
+        this(httpClient, baseUrl, resortID, 1);
+    }
+
+    public LeaderboardSubscriber(HttpClient httpClient, String baseUrl, int resortID, int dayId) {
 
         this.httpClient = httpClient;
         this.url = baseUrl;
         this.resortID = resortID;
-        this.dayID = "1";
+        this.dayID = Integer.toString(dayId);
     }
 
     public void start() {

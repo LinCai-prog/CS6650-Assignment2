@@ -10,15 +10,21 @@ public class SwipeGenerator implements Runnable {
     private final BlockingQueue<SwipeEvent> queue;
     private final int totalEvents;
     private final int resortCount;
+    private final int dayId;
 
     public SwipeGenerator(
             BlockingQueue<SwipeEvent> queue,
             int totalEvents,
             int resortCount) {
+        this(queue, totalEvents, resortCount, 1);
+    }
+
+    public SwipeGenerator(BlockingQueue<SwipeEvent> queue, int totalEvents, int resortCount, int dayId) {
 
         this.queue = queue;
         this.totalEvents = totalEvents;
         this.resortCount = resortCount;
+        this.dayId = dayId;
     }
 
     @Override
@@ -34,7 +40,7 @@ public class SwipeGenerator implements Runnable {
                         random.nextInt(1, resortCount + 1),
                         random.nextInt(1, 41),
                         2026,
-                        1,
+                        dayId,
                         random.nextInt(1, 361)
                 );
 

@@ -1,0 +1,136 @@
+{
+  "environment": "AWS us-west-2, one direct ingest over its VPC private IP",
+  "storage": "memory",
+  "targetMainRps": 750,
+  "targetWarmupRps": 300,
+  "mainClientThreads": 128,
+  "warmupClientThreads": 32,
+  "consumerWorkers": 40,
+  "prefetch": 50,
+  "aggregationBatchSize": 50,
+  "ackBatchSize": 25,
+  "observedHttpStartUtc": "2026-11-13T23:38:27.293257+00:00",
+  "observedHttpEndUtc": "2026-11-13T23:50:39.733974+00:00",
+  "httpRuntimeSeconds": 732.63,
+  "httpThroughput": 682.48,
+  "mainPhaseThroughput": 748.02,
+  "http201": 500000,
+  "httpFailures": 0,
+  "retryableErrorsPrinted": 0,
+  "phases": {
+    "WARMUP": 32000,
+    "MAIN": 468000
+  },
+  "httpMeanMs": 4.290446747488,
+  "httpP95Ms": 6.163472,
+  "httpP99Ms": 42.500171,
+  "httpMaxMs": 814.853989,
+  "rabbitPublish": 500035,
+  "rabbitDeliver": 500035,
+  "rabbitAck": 500035,
+  "unattributedBrokerCounterDelta": 35,
+  "rabbitRedeliver": 0,
+  "deadLetterDelta": 0,
+  "consumerUnique": 500000,
+  "consumerDuplicates": 0,
+  "lagSamples": 500000,
+  "lagMeanMs": 4.779556,
+  "lagP95UpperMs": 7,
+  "lagP99UpperMs": 28,
+  "lagMaxUpperMs": 781,
+  "lagAtLeast100Ms": 1152,
+  "queueSamples": 731,
+  "queueAggregatePeak": 23,
+  "queueAggregateMean": 4.719562243502052,
+  "queuePerResortPeak": 8,
+  "queuePerResortMaxMean": 1.7291381668946648,
+  "rateSamples": 126,
+  "webSocketDistinctUpdates": 1587,
+  "webSocketFinalVersionSum": 1587,
+  "webSocketVersionCountGap": 0,
+  "webSocketInvalid": 0,
+  "webSocketReconnects": 0,
+  "webSocketExample": {
+    "resortId": "1",
+    "version": 147,
+    "top10": [
+      {
+        "rank": 1,
+        "skierId": "28476",
+        "totalVertical": 1577
+      },
+      {
+        "rank": 2,
+        "skierId": "32270",
+        "totalVertical": 1416
+      },
+      {
+        "rank": 3,
+        "skierId": "20311",
+        "totalVertical": 1367
+      },
+      {
+        "rank": 4,
+        "skierId": "23380",
+        "totalVertical": 1310
+      },
+      {
+        "rank": 5,
+        "skierId": "16273",
+        "totalVertical": 1309
+      },
+      {
+        "rank": 6,
+        "skierId": "9382",
+        "totalVertical": 1291
+      },
+      {
+        "rank": 7,
+        "skierId": "36939",
+        "totalVertical": 1267
+      },
+      {
+        "rank": 8,
+        "skierId": "41456",
+        "totalVertical": 1266
+      },
+      {
+        "rank": 9,
+        "skierId": "47538",
+        "totalVertical": 1253
+      },
+      {
+        "rank": 10,
+        "skierId": "22795",
+        "totalVertical": 1239
+      }
+    ]
+  },
+  "resources": {
+    "ingest-1": {
+      "samples": 139,
+      "cpuBusyPercent": 10.297133030051372,
+      "cpuIowaitPercent": 0.049975379776139695,
+      "serviceMemoryPeakMiB": 260.41015625,
+      "hostNetworkRxMiB": 238.1422462463379,
+      "hostNetworkTxMiB": 369.05676078796387
+    },
+    "consumer": {
+      "samples": 139,
+      "cpuBusyPercent": 9.009922661608055,
+      "cpuIowaitPercent": 0.029184298847220194,
+      "serviceMemoryPeakMiB": 300.7578125,
+      "hostNetworkRxMiB": 217.447922706604,
+      "hostNetworkTxMiB": 44.742061614990234
+    },
+    "rabbitmq": {
+      "samples": 139,
+      "cpuBusyPercent": 63.48893979794945,
+      "cpuIowaitPercent": 0.040560333496075414,
+      "serviceMemoryPeakMiB": 167.77734375,
+      "hostNetworkRxMiB": 413.10183906555176,
+      "hostNetworkTxMiB": 460.27942085266113
+    }
+  },
+  "successfulBackendPosts": 500000
+}

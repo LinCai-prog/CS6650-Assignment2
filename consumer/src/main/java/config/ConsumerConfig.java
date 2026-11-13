@@ -21,6 +21,17 @@ public final class ConsumerConfig {
 
     public static final String SWIPE_EXCHANGE = "skitrak.exchange";
 
+    public enum StorageMode {
+        SQLITE, MEMORY;
+
+        public static StorageMode fromEnvironment() {
+            String value = System.getenv().getOrDefault("LEADERBOARD_STORAGE", "sqlite");
+            if ("sqlite".equalsIgnoreCase(value)) return SQLITE;
+            if ("memory".equalsIgnoreCase(value)) return MEMORY;
+            throw new IllegalArgumentException("LEADERBOARD_STORAGE must be sqlite or memory");
+        }
+    }
+
     public static final int PREFETCH_COUNT = positive("CONSUMER_PREFETCH", 50);
     public static final int DB_BATCH_SIZE = positive("DB_BATCH_SIZE", 50);
     public static final int DB_BATCH_WAIT_MS = positive("DB_BATCH_WAIT_MS", 5);

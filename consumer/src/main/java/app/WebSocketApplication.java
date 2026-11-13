@@ -5,6 +5,7 @@ import rabbitmq.LeaderboardUpdateSubscriber;
 import rabbitmq.RabbitMQConsumerManager;
 import storage.LeaderboardStore;
 import storage.SqliteLeaderboardStore;
+import config.ConsumerConfig.StorageMode;
 import websocket.LeaderboardWebSocketServer;
 
 import com.rabbitmq.client.Channel;
@@ -17,6 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class WebSocketApplication {
 
     public static void main(String[] args) throws Exception {
+
+        if (StorageMode.fromEnvironment() == StorageMode.MEMORY) {
+            throw new IllegalStateException("Memory mode requires the server-v2 WebSocket endpoint, which reads snapshots from the consumer");
+        }
 
         int port = Integer.parseInt(System.getenv().getOrDefault("WS_PORT", "8081"));
 

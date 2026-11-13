@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class LoadClient {
 
     private static final int RESORT_COUNT = 10;
+    private static final int DAY_ID = Integer.parseInt(System.getenv().getOrDefault("LOAD_DAY_ID", "1"));
 
     // Smoke: 1,000 events
     private static final int SMOKE_WARMUP_EVENTS = 100;
@@ -111,6 +112,9 @@ public class LoadClient {
                 break;
         }
 
+        if (DAY_ID < 1 || DAY_ID > 999_999_999) {
+            throw new IllegalArgumentException("LOAD_DAY_ID must be in 1..999999999");
+        }
         if (args.length > 4) throw new IllegalArgumentException("Too many arguments");
         mainThreads = positiveOption(args, 2, "INGEST_THREADS", mainThreads);
         warmupThreads = positiveOption(args, 3, "WARMUP_THREADS", warmupThreads);
@@ -157,7 +161,7 @@ public class LoadClient {
         SubscriptionManager subscriptionManager =
                 new SubscriptionManager(
                         WS_BASE_URL,
-                        RESORT_COUNT
+                        RESORT_COUNT, DAY_ID
                 );
 
         System.out.println(
@@ -409,7 +413,7 @@ public class LoadClient {
                 new SwipeGenerator(
                         queue,
                         totalEvents,
-                        RESORT_COUNT
+                        RESORT_COUNT, DAY_ID
                 );
 
         Thread generatorThread = new Thread(generator);

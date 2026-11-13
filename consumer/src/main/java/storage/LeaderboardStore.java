@@ -13,7 +13,7 @@ public interface LeaderboardStore extends AutoCloseable {
     // Returns false if eventId has already been processed.
     boolean processEvent(SwipeEvent event) throws Exception;
 
-    // All events, per-event standings changes and outbox entries commit atomically.
+    // Apply the batch atomically, including per-event standings changes and outbox entries.
     List<Boolean> processBatch(List<SwipeEvent> events) throws Exception;
 
     // Updates are committed atomically with aggregation, only if the top-N changed.
@@ -21,7 +21,7 @@ public interface LeaderboardStore extends AutoCloseable {
 
     void markUpdatePublished(LeaderboardUpdate update) throws Exception;
 
-    // Read standings and their version from a single database snapshot.
+    // Read standings and their version from the same state.
     LeaderboardUpdate getSnapshot(String resortId, String dayId) throws Exception;
 
     // Return the total vertical for one skier.
@@ -37,6 +37,8 @@ public interface LeaderboardStore extends AutoCloseable {
             String dayId,
             int limit
     ) throws Exception;
+
+    default String getMetricsSummary() { return ""; }
 
     @Override
     void close() throws Exception;

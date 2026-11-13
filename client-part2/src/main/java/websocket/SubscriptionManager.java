@@ -15,6 +15,10 @@ public class SubscriptionManager {
     public SubscriptionManager(
             String baseUrl,
             int resortCount) {
+        this(baseUrl, resortCount, 1);
+    }
+
+    public SubscriptionManager(String baseUrl, int resortCount, int dayId) {
 
         for (int i = 1; i <= resortCount; i++) {
             subscribers.add(
@@ -24,7 +28,7 @@ public class SubscriptionManager {
                                     .connectTimeout(java.time.Duration.ofSeconds(10))
                                     .version(HttpClient.Version.HTTP_1_1).build(),
                             baseUrl,
-                            i
+                            i, dayId
                     )
             );
         }

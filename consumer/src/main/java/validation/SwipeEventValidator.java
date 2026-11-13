@@ -40,6 +40,10 @@ public final class SwipeEventValidator {
             );
         }
 
+        if (!event.getDayID().matches("[0-9]+")) {
+            throw new InvalidSwipeEventException("Day ID must contain digits");
+        }
+
         if (isBlank(event.getLiftID())) {
             throw new InvalidSwipeEventException(
                     "Missing liftID"

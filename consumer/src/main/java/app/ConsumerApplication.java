@@ -3,6 +3,7 @@ package app;
 
 import com.rabbitmq.client.Channel;
 import config.ConsumerConfig;
+import config.ConsumerConfig.StorageMode;
 import rabbitmq.RabbitMQConsumerManager;
 import rabbitmq.ResortConsumer;
 import rabbitmq.LeaderboardUpdatePublisher;
@@ -10,6 +11,7 @@ import rabbitmq.LeaderboardOutboxDispatcher;
 
 import java.util.concurrent.CountDownLatch;
 import storage.LeaderboardStore;
+import storage.InMemoryLeaderboardStore;
 import storage.SqliteLeaderboardStore;
 
 import java.nio.file.Files;
@@ -31,6 +33,7 @@ public class ConsumerApplication {
 
     public static void main(String[] args) throws Exception {
 
+        StorageMode storageMode = StorageMode.fromEnvironment();
         RabbitMQConsumerManager manager =
                 new RabbitMQConsumerManager();
 
@@ -77,28 +80,27 @@ public class ConsumerApplication {
         );
 
 
-        Path databasePath = Path.of(System.getenv().getOrDefault(
-                "LEADERBOARD_DB_PATH", "data/leaderboard.db")).toAbsolutePath();
-        Files.createDirectories(databasePath.getParent());
-
-        SqliteLeaderboardStore store =
-                new SqliteLeaderboardStore(databasePath.toString());
-
-        System.out.println(
-                "SQLite leaderboard initialized at: "
-                        + databasePath.toAbsolutePath()
-        );
-
+        LeaderboardStore store;
+        if (storageMode == StorageMode.SQLITE) {
+            Path databasePath = Path.of(System.getenv().getOrDefault(
+                    "LEADERBOARD_DB_PATH", "data/leaderboard.db")).toAbsolutePath();
+            Files.createDirectories(databasePath.getParent());
+            store = new SqliteLeaderboardStore(databasePath.toString());
+            System.out.println("SQLite leaderboard initialized at: " + databasePath);
+            System.out.println("SQLite tuning: cache KiB=" + ConsumerConfig.SQLITE_CACHE_KIB
+                    + ", automatic checkpoint pages=" + ConsumerConfig.SQLITE_CHECKPOINT_PAGES
+                    + ", background checkpoint ms=" + ConsumerConfig.SQLITE_CHECKPOINT_MS);
+        } else {
+            store = new InMemoryLeaderboardStore();
+            System.out.println("In-memory leaderboard initialized.");
+        }
 
         service.BatchingSwipeProcessor batcher = new service.BatchingSwipeProcessor(store,
                 ConsumerConfig.DB_BATCH_SIZE, ConsumerConfig.DB_BATCH_WAIT_MS,
                 Math.multiplyExact(ConsumerConfig.PREFETCH_COUNT, ConsumerConfig.RESORT_COUNT));
         System.out.println("Batch tuning: prefetch=" + ConsumerConfig.PREFETCH_COUNT
-                + ", db batch=" + ConsumerConfig.DB_BATCH_SIZE + ", db wait ms=" + ConsumerConfig.DB_BATCH_WAIT_MS
+                + ", aggregation batch=" + ConsumerConfig.DB_BATCH_SIZE + ", batch wait ms=" + ConsumerConfig.DB_BATCH_WAIT_MS
                 + ", ack batch=" + ConsumerConfig.ACK_BATCH_SIZE + ", ack flush ms=" + ConsumerConfig.ACK_FLUSH_MS);
-        System.out.println("SQLite tuning: cache KiB=" + ConsumerConfig.SQLITE_CACHE_KIB
-                + ", automatic checkpoint pages=" + ConsumerConfig.SQLITE_CHECKPOINT_PAGES
-                + ", background checkpoint ms=" + ConsumerConfig.SQLITE_CHECKPOINT_MS);
         Channel snapshotChannel = manager.createChannel();
         new rabbitmq.LeaderboardSnapshotResponder(snapshotChannel, store).start();
 
@@ -197,14 +199,29 @@ public class ConsumerApplication {
 
             boolean batcherTerminated = false;
             try { batcher.close(); batcherTerminated = true; }
-            catch (Exception e) { System.err.println("Database writer shutdown failed: " + e); }
+            catch (Exception e) { System.err.println("Aggregation batcher shutdown failed: " + e); }
             for (ResortConsumer consumer : consumers) {
                 try { consumer.close(); }
                 catch (Exception e) { System.err.println("ACK flush shutdown failed: " + e); }
             }
             System.out.println(store.getMetricsSummary());
-            // Stop publication before closing its SQLite connection or channel.
+            // Stop publication before closing the store or publisher channel.
             boolean dispatcherTerminated = false;
+            try {
+                if (storageMode == StorageMode.MEMORY && batcherTerminated) {
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                    while (!store.getPendingUpdates(1).isEmpty() && System.nanoTime() < deadline) {
+                        TimeUnit.MILLISECONDS.sleep(25);
+                    }
+                    if (!store.getPendingUpdates(1).isEmpty()) {
+                        System.err.println("In-memory leaderboard publications pending at shutdown.");
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                System.err.println("Could not check the remaining leaderboard publications: " + e);
+            }
             try {
                 dispatcher.close();
                 dispatcherTerminated = true;
@@ -213,22 +230,22 @@ public class ConsumerApplication {
                 System.err.println("Failed to stop leaderboard dispatcher: " + e);
             }
 
-            // Step 4: Close SQLite after workers and dispatcher terminate.
+            // Step 4: Close storage after workers and dispatcher terminate.
             if (workersTerminated && batcherTerminated && dispatcherTerminated) {
                 try {
                     store.close();
                     System.out.println(
-                            "SQLite leaderboard closed."
+                            "Leaderboard storage closed."
                     );
                 } catch (Exception e) {
                     System.err.println(
-                            "Failed to close SQLite leaderboard: "
+                            "Failed to close leaderboard storage: "
                                     + e.getMessage()
                     );
                 }
             } else {
                 System.err.println(
-                        "Skipping explicit SQLite close: "
+                        "Skipping explicit storage close: "
                                 + "worker tasks may still be active."
                 );
             }

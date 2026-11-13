@@ -9,13 +9,20 @@ import java.util.ArrayList;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 
 public class SqliteLeaderboardStore implements LeaderboardStore {
+
+    private static final String SELECT_TOP_N =
+            "SELECT skier_id, total_vertical FROM skier_totals "
+                    + "WHERE resort_id = ? AND day_id = ? "
+                    + "ORDER BY total_vertical DESC, skier_id ASC LIMIT ?";
 
     private final Connection connection;
     private final WalCheckpointer checkpointer;
@@ -116,6 +123,9 @@ public class SqliteLeaderboardStore implements LeaderboardStore {
         List<Boolean> changed = new ArrayList<>();
         List<Instant> started = new ArrayList<>();
         List<Long> startedNanos = new ArrayList<>();
+        // Each read sees this transaction's own writes. Keep the latest
+        // standings for each resort/day until this transaction ends.
+        Map<List<String>, List<Map.Entry<String, Long>>> batchStandings = new HashMap<>();
         long batchStarted = System.nanoTime();
         connection.setAutoCommit(false);
         try (var record = connection.prepareStatement(
@@ -124,7 +134,8 @@ public class SqliteLeaderboardStore implements LeaderboardStore {
              var total = connection.prepareStatement(
                 "INSERT INTO skier_totals (resort_id, day_id, skier_id, total_vertical) "
                         + "VALUES (?, ?, ?, ?) ON CONFLICT(resort_id, day_id, skier_id) "
-                        + "DO UPDATE SET total_vertical = total_vertical + excluded.total_vertical")) {
+                        + "DO UPDATE SET total_vertical = total_vertical + excluded.total_vertical");
+             var rank = connection.prepareStatement(SELECT_TOP_N)) {
             for (SwipeEvent event : events) {
                 started.add(Instant.now());
                 startedNanos.add(System.nanoTime());
@@ -138,13 +149,20 @@ public class SqliteLeaderboardStore implements LeaderboardStore {
                     changed.add(false);
                     continue;
                 }
-                var before = getTopN(event.getResortID(), event.getDayID(), LeaderboardUpdate.TOP_N);
-                total.setString(1, event.getResortID());
-                total.setString(2, event.getDayID());
+                String resort = event.getResortID();
+                String day = event.getDayID();
+                var key = List.of(resort, day);
+                var before = batchStandings.get(key);
+                if (before == null) {
+                    before = readTopN(rank, resort, day, LeaderboardUpdate.TOP_N);
+                }
+                total.setString(1, resort);
+                total.setString(2, day);
                 total.setString(3, event.getSkierID());
                 total.setLong(4, event.getVertical());
                 total.executeUpdate();
-                var after = getTopN(event.getResortID(), event.getDayID(), LeaderboardUpdate.TOP_N);
+                var after = readTopN(rank, resort, day, LeaderboardUpdate.TOP_N);
+                batchStandings.put(key, after);
                 boolean different = !before.equals(after);
                 changed.add(different);
                 // Capture every intermediate change, even within the same transaction.
@@ -294,36 +312,23 @@ public class SqliteLeaderboardStore implements LeaderboardStore {
                     "limit must be positive");
         }
 
-        String sql =
-                "SELECT skier_id, total_vertical " +
-                        "FROM skier_totals " +
-                        "WHERE resort_id = ? AND day_id = ? " +
-                        "ORDER BY total_vertical DESC, skier_id ASC " +
-                        "LIMIT ?";
+        try (var rank = connection.prepareStatement(SELECT_TOP_N)) {
+            return readTopN(rank, resortId, dayId, limit);
+        }
+    }
 
-        List<Map.Entry<String, Long>> results =
-                new java.util.ArrayList<>();
-
-        try (java.sql.PreparedStatement ps =
-                     connection.prepareStatement(sql)) {
-
-            ps.setString(1, resortId);
-            ps.setString(2, dayId);
-            ps.setInt(3, limit);
-
-            try (java.sql.ResultSet rs = ps.executeQuery()) {
-
-                while (rs.next()) {
-                    String skierId = rs.getString("skier_id");
-                    long total = rs.getLong("total_vertical");
-
-                    results.add(
-                            new java.util.AbstractMap.SimpleEntry<>(
-                                    skierId, total));
-                }
+    private static List<Map.Entry<String, Long>> readTopN(
+            PreparedStatement rank, String resortId, String dayId, int limit) throws SQLException {
+        rank.setString(1, resortId);
+        rank.setString(2, dayId);
+        rank.setInt(3, limit);
+        List<Map.Entry<String, Long>> results = new ArrayList<>();
+        try (var rows = rank.executeQuery()) {
+            while (rows.next()) {
+                results.add(new java.util.AbstractMap.SimpleEntry<>(
+                        rows.getString("skier_id"), rows.getLong("total_vertical")));
             }
         }
-
         return results;
     }
 

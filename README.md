@@ -5,7 +5,8 @@
 ```text
 Client -> ALB -> [four ingest servers] -> RabbitMQ -> Consumer
                                                         |
-                                       SQLite aggregation + outbox
+                                       Aggregation + outbox
+                                       (memory or SQLite)
                                                         |
                                         RabbitMQ broadcast backplane
                                                         |
@@ -23,7 +24,7 @@ the backplane to each ingest host, then back through the ALB to its subscribers.
 |---|---|
 | `leaderboard-common` | Immutable versioned leaderboard payload and snapshot serialization |
 | `server-v2` | HTTP ingestion, pooled RabbitMQ publishing, real WebSocket endpoint and per-host backplane |
-| `consumer` | Ordered aggregation, SQLite deduplication, conditional notifications, outbox retries and authoritative snapshots |
+| `consumer` | Ordered aggregation, event ID deduplication, conditional notifications, outbox retries and authoritative snapshots |
 | `client-part2` | HTTP load generation, ALB WebSocket subscriptions and metrics |
 | `deployment` | Deployment, rollback and ALB configuration procedures |
 | `monitoring` | Broker and host sampling, queue guard and verification workflow |
@@ -64,10 +65,32 @@ and deliberate scheduling.
 
 ## Correctness and deployment
 
+The Consumer selects its storage at startup. Set `LEADERBOARD_STORAGE=memory`
+for A2's in-memory aggregation or `LEADERBOARD_STORAGE=sqlite` for persistent
+storage. SQLite is the default for existing deployments.
+
+```sh
+# With the RabbitMQ connection variables set and the resort queues declared
+LEADERBOARD_STORAGE=memory java -jar consumer/target/consumer-1.0-SNAPSHOT.jar
+LEADERBOARD_STORAGE=sqlite LEADERBOARD_DB_PATH=data/leaderboard.db \
+  java -jar consumer/target/consumer-1.0-SNAPSHOT.jar
+```
+
+Run a single processing Consumer for these shared queues. Change modes between
+runs after the queues and leaderboard publications drain. The memory mode
+starts with empty standings and keeps totals, event IDs and pending changes for
+the lifetime of that process. Restart the ingest applications or reconnect
+subscribers after changing modes or restarting a memory Consumer to establish
+the new version baseline. SQLite history lives in its database and is available
+when that file is opened again. Swipes processed in memory are acknowledged
+after in-memory aggregation and are absent from that file. Use the
+`server-v2/leaderboard` WebSocket endpoint with either mode.
+
 SQLite records event IDs, skier totals and pending leaderboard changes in one
-transaction. Only changes to the ordered top 10 generate notifications. A leader's
+transaction. Memory applies the same changes under a lock before ACK. Only
+changes to the ordered top 10 generate notifications. A leader's
 score increase counts as a change even if rank is unchanged. A below-cutoff
-increase is persisted without a broadcast. Replayed event IDs change neither.
+increase changes the total without a broadcast. Replayed event IDs change neither.
 
 Every ingest host receives its own copy of changed standings. A new subscription
 requests a current snapshot from the processing host through RabbitMQ, using a
@@ -86,6 +109,9 @@ The earlier performance report contains historical measurements from the former
 deployment and must not be treated as a benchmark of this revised code.
 
 ## Current validation
+
+[AWS single-ingest 500K in-memory benchmark](performance/aws-single-500k-memory-20261113/README.md)
+
 
 The Java 11 Maven build and 83 automated tests passed before submission. Four
 client self-checks cover allocation, shared workload, pacing and payload tracking.
@@ -110,3 +136,7 @@ See [the current tuning environment](deployment/consumer-tuning-current.env) and
 `LOAD_TOTAL_EVENTS` changes the total while retaining the selected mode's warmup
 count. The request CSV is saved after HTTP completion, before WebSocket drain.
 Use the monitored runner for larger workloads.
+
+Set `LOAD_DAY_ID` to use a fresh leaderboard partition for a benchmark. The
+load client uses the same day for its swipe requests and WebSocket subscriptions.
+The default day is 1.

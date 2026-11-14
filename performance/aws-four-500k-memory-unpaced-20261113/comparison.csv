@@ -1,0 +1,4 @@
+route,mainPhaseThroughput,httpRuntimeSeconds,httpP99Ms,lagMeanMs,lagP99UpperMs,lagMaxUpperMs,lagAtLeast100Ms,queuePerResortPeak,queueAggregatePeak,http201,deadLetterDelta
+"One ingest, direct VPC",2478.33,295.83,115.416366,33.884532,102,687,5534,32,169,500000,0
+"Two ingests, ALB",2824.75,272.9,90.737784,19.141188,70,380,1015,35,255,500000,0
+"Four ingests, ALB",2805.71,274.01,92.079228,16.279312,60,339,611,54,430,500000,0

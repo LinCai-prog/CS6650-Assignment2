@@ -1,0 +1,134 @@
+{
+  "environment": "AWS us-west-2, four EC2 ingests through AWS ALB",
+  "storage": "memory",
+  "targetMainRps": 0,
+  "planned": 500000,
+  "clientRecords": 500000,
+  "queueGuard": null,
+  "targetWarmupRps": 300,
+  "mainClientThreads": 128,
+  "warmupClientThreads": 32,
+  "consumerWorkers": 40,
+  "prefetch": 50,
+  "aggregationBatchSize": 50,
+  "ackBatchSize": 25,
+  "observedHttpStartUtc": "2026-11-14T00:18:58.491553+00:00",
+  "observedHttpEndUtc": "2026-11-14T00:23:32.324634+00:00",
+  "httpRuntimeSeconds": 274.01,
+  "httpThroughput": 1824.74,
+  "mainPhaseThroughput": 2805.71,
+  "mainObservedWindowThroughput": 2816.0275649065734,
+  "mainStartSeconds": 107.64152598381042,
+  "mainHttpP99Ms": 92.255472,
+  "http201": 500000,
+  "httpFailures": 0,
+  "retryableErrorsPrinted": 0,
+  "phases": {
+    "WARMUP": 32000,
+    "MAIN": 468000
+  },
+  "httpMeanMs": 42.769142583074,
+  "httpP95Ms": 69.908521,
+  "httpP99Ms": 92.079228,
+  "httpMaxMs": 643.077134,
+  "rabbitPublish": 500000,
+  "rabbitDeliver": 500000,
+  "rabbitAck": 500000,
+  "rabbitRedeliver": 0,
+  "deadLetterDelta": 0,
+  "consumerUnique": 500000,
+  "consumerDuplicates": 0,
+  "lagSamples": 500000,
+  "lagMeanMs": 16.279312,
+  "lagP95UpperMs": 35,
+  "lagP99UpperMs": 60,
+  "lagMaxUpperMs": 339,
+  "lagAtLeast100Ms": 611,
+  "queueSamples": 273,
+  "queueAggregatePeak": 430,
+  "queueAggregateMean": 26.054945054945055,
+  "queuePerResortPeak": 54,
+  "queuePerResortMaxMean": 6.597069597069597,
+  "rateSamples": 54,
+  "webSocketDistinctUpdates": 1646,
+  "webSocketFinalVersionSum": 1646,
+  "webSocketVersionCountGap": 0,
+  "webSocketInvalid": 0,
+  "webSocketReconnects": 0,
+  "resources": {
+    "ingest-1": {
+      "samples": 55,
+      "cpuBusyPercent": 7.588589257856029,
+      "cpuIowaitPercent": 0.04085877720823119,
+      "mainCpuBusyPercent": 10.789241219653356,
+      "serviceMemoryPeakMiB": 228.1328125,
+      "hostNetworkRxMiB": 78.27764129638672,
+      "hostNetworkTxMiB": 90.60692882537842
+    },
+    "ingest-2": {
+      "samples": 55,
+      "cpuBusyPercent": 7.244702066986003,
+      "cpuIowaitPercent": 0.0503233742754366,
+      "mainCpuBusyPercent": 10.437833714721586,
+      "serviceMemoryPeakMiB": 215.5546875,
+      "hostNetworkRxMiB": 78.19272899627686,
+      "hostNetworkTxMiB": 90.58228588104248
+    },
+    "ingest-3": {
+      "samples": 55,
+      "cpuBusyPercent": 13.446226103548232,
+      "cpuIowaitPercent": 0.031189226874105604,
+      "mainCpuBusyPercent": 15.643035052548449,
+      "serviceMemoryPeakMiB": 191.453125,
+      "hostNetworkRxMiB": 78.3849573135376,
+      "hostNetworkTxMiB": 90.45847988128662
+    },
+    "ingest-4": {
+      "samples": 55,
+      "cpuBusyPercent": 10.603270271778559,
+      "cpuIowaitPercent": 0.03534423423926186,
+      "mainCpuBusyPercent": 13.231753771141246,
+      "serviceMemoryPeakMiB": 190.625,
+      "hostNetworkRxMiB": 78.37367057800293,
+      "hostNetworkTxMiB": 90.40463924407959
+    },
+    "consumer": {
+      "samples": 55,
+      "cpuBusyPercent": 12.412810320258007,
+      "cpuIowaitPercent": 0.02062551563789095,
+      "mainCpuBusyPercent": 16.49528445390934,
+      "serviceMemoryPeakMiB": 380.59375,
+      "hostNetworkRxMiB": 199.77729606628418,
+      "hostNetworkTxMiB": 18.617337226867676
+    },
+    "rabbitmq": {
+      "samples": 55,
+      "cpuBusyPercent": 80.30681283693332,
+      "cpuIowaitPercent": 0.0325626831650928,
+      "mainCpuBusyPercent": 99.43336767468638,
+      "serviceMemoryPeakMiB": 200.37109375,
+      "hostNetworkRxMiB": 601.8529405593872,
+      "hostNetworkTxMiB": 467.7099618911743
+    }
+  },
+  "backendPosts": {
+    "ingest-1": {
+      "201": 125000
+    },
+    "ingest-2": {
+      "201": 124999
+    },
+    "ingest-3": {
+      "201": 125001
+    },
+    "ingest-4": {
+      "201": 125000
+    }
+  },
+  "fourIngestSnapshotsMatch": true,
+  "successfulBackendPosts": 500000,
+  "albWebSocketAffinityPassed": true,
+  "eventCountsReconcile": true,
+  "clientExitCode": 0,
+  "queueThresholdExceeded": false
+}

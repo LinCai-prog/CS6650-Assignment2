@@ -104,26 +104,28 @@ preserved. Credentials and private keys must stay outside the repository.
 
 See [the current deployment guide](deployment/INGEST_WEBSOCKETS.md),
 [architecture](architecture/ARCHITECTURE.md), and
-[the benchmark results](monitoring/RESULTS.md).
-The earlier performance report contains historical measurements from the former
-deployment and must not be treated as a benchmark of this revised code.
+[the AWS in-memory benchmark results](performance/aws-memory-20261113/README.md).
 
 ## Current validation
 
-[AWS single-ingest 500K in-memory benchmark](performance/aws-single-500k-memory-20261113/README.md)
+- [Assignment 2 submission PDF](docs/CS6650_Assignment2_Final_Report_Lin_Cai.pdf)
+- [AWS in-memory test matrix and evidence](performance/aws-memory-20261113/README.md)
+- [AI usage reflection](AI_USAGE.md)
 
-
-The Java 11 Maven build and 83 automated tests passed before submission. Four
-client self-checks cover allocation, shared workload, pacing and payload tracking.
-The measured 500K and 1M results are in [monitoring/RESULTS.md](monitoring/RESULTS.md).
-Use [the monitoring scripts](monitoring/README.md) for broker and host sampling
-and to guard a load client. Raw evidence remains separate from source control.
+The AWS in-memory suite completed 500K swipes with one, two and four ingest
+hosts, and 1M with four. The 1M run sustained 2,883.09 requests/s in the
+unpaced main phase. HTTP 201, RabbitMQ ACK and unique aggregation counts each
+matched the expected workload. Earlier rate-controlled SQLite results are in
+[monitoring/RESULTS.md](monitoring/RESULTS.md). The
+[monitoring guide](monitoring/README.md) describes broker and host sampling and
+the guarded load client.
 
 The ALB script documents the intended health checks, idle timeout and cookie
-settings. Routing and live WebSockets were observed; an authenticated export of
-all ALB settings and controlled failover testing were not part of the final runs.
-Consumer worker count is configurable, but there is no automatic load-driven
-worker scaling. The measured rates do not establish unlimited-input capacity.
+settings. The AWS in-memory suite verified routing, WebSocket affinity and final
+leaderboard agreement. An [earlier SQLite functional probe](performance/aws-memory-20261113/historical-alb-failover.json)
+observed failover and a 75-second idle connection. Live export of the exact
+ALB attributes was outside the evidence. Consumer worker count is configured at
+startup, and automatic load-driven worker scaling remains unimplemented.
 
 ## Consumer and client tuning
 

@@ -1,0 +1,4 @@
+"isolated RabbitMQ delivery at 50,000 events/s","ACK throughput/s, median","Send-to-ACK P99 (ms), median","Single-resort sampled Ready peak, median"
+original SQLite,28254,1838.3,6485
+optimized SQLite,37581,820.9,4029
+in-memory,49774,9.0,0

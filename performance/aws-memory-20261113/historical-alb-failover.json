@@ -1,0 +1,26 @@
+{
+  "datePst": "2026-11-09",
+  "scope": "Separate functional probe on an earlier SQLite deployment",
+  "observedIdleSeconds": 75.0,
+  "tcpConnectionReusedAfterIdle": true,
+  "originalWebSocketClosedAfterSeconds": 1.5,
+  "originalWebSocketCloseCode": 1006,
+  "reconnectWithOriginalCookieSeconds": 50.62,
+  "http502HealthProbes": 12,
+  "postReconnectSwipeCount": 1,
+  "replacementLeaderboard": {
+    "eventId": "5f99996b-9b14-43f8-a1c5-64f8e8824c37",
+    "resortId": "3",
+    "dayId": "364",
+    "version": 1,
+    "top10": [
+      {
+        "rank": 1,
+        "skierId": "97001",
+        "totalVertical": 397
+      }
+    ]
+  },
+  "secondsFromLocalReadinessToALBReentry": 147.05,
+  "originalIngestRestored": true
+}

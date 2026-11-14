@@ -1,0 +1,134 @@
+{
+  "environment": "AWS us-west-2, four EC2 ingests through AWS ALB",
+  "storage": "memory",
+  "targetMainRps": 0,
+  "planned": 1000000,
+  "clientRecords": 1000000,
+  "queueGuard": null,
+  "targetWarmupRps": 300,
+  "mainClientThreads": 128,
+  "warmupClientThreads": 32,
+  "consumerWorkers": 40,
+  "prefetch": 50,
+  "aggregationBatchSize": 50,
+  "ackBatchSize": 25,
+  "observedHttpStartUtc": "2026-11-14T00:28:05.511057+00:00",
+  "observedHttpEndUtc": "2026-11-14T00:35:28.137515+00:00",
+  "httpRuntimeSeconds": 442.82,
+  "httpThroughput": 2258.27,
+  "mainPhaseThroughput": 2883.09,
+  "mainObservedWindowThroughput": 2893.576788646137,
+  "mainStartSeconds": 108.09239506721497,
+  "mainHttpP99Ms": 91.032648,
+  "http201": 1000000,
+  "httpFailures": 0,
+  "retryableErrorsPrinted": 0,
+  "phases": {
+    "WARMUP": 32000,
+    "MAIN": 968000
+  },
+  "httpMeanMs": 42.83952388465,
+  "httpP95Ms": 68.306729,
+  "httpP99Ms": 90.439616,
+  "httpMaxMs": 647.793271,
+  "rabbitPublish": 1000000,
+  "rabbitDeliver": 1000000,
+  "rabbitAck": 1000000,
+  "rabbitRedeliver": 0,
+  "deadLetterDelta": 0,
+  "consumerUnique": 1000000,
+  "consumerDuplicates": 0,
+  "lagSamples": 1000000,
+  "lagMeanMs": 17.246311,
+  "lagP95UpperMs": 38,
+  "lagP99UpperMs": 74,
+  "lagMaxUpperMs": 204,
+  "lagAtLeast100Ms": 2631,
+  "queueSamples": 441,
+  "queueAggregatePeak": 371,
+  "queueAggregateMean": 37.68934240362812,
+  "queuePerResortPeak": 46,
+  "queuePerResortMaxMean": 9.183673469387756,
+  "rateSamples": 87,
+  "webSocketDistinctUpdates": 1944,
+  "webSocketFinalVersionSum": 1944,
+  "webSocketVersionCountGap": 0,
+  "webSocketInvalid": 0,
+  "webSocketReconnects": 0,
+  "resources": {
+    "ingest-1": {
+      "samples": 89,
+      "cpuBusyPercent": 8.437360550133299,
+      "cpuIowaitPercent": 0.04347975330961017,
+      "mainCpuBusyPercent": 10.73180391798434,
+      "serviceMemoryPeakMiB": 237.84375,
+      "hostNetworkRxMiB": 155.22400856018066,
+      "hostNetworkTxMiB": 180.74327659606934
+    },
+    "ingest-2": {
+      "samples": 89,
+      "cpuBusyPercent": 8.704829931196587,
+      "cpuIowaitPercent": 0.04906379434283041,
+      "mainCpuBusyPercent": 10.713033402954583,
+      "serviceMemoryPeakMiB": 225.4609375,
+      "hostNetworkRxMiB": 155.20507717132568,
+      "hostNetworkTxMiB": 180.80521392822266
+    },
+    "ingest-3": {
+      "samples": 89,
+      "cpuBusyPercent": 11.161019654339004,
+      "cpuIowaitPercent": 0.03306124310274066,
+      "mainCpuBusyPercent": 14.325273128953182,
+      "serviceMemoryPeakMiB": 199.65625,
+      "hostNetworkRxMiB": 155.50912284851074,
+      "hostNetworkTxMiB": 180.5194501876831
+    },
+    "ingest-4": {
+      "samples": 89,
+      "cpuBusyPercent": 10.130651891374239,
+      "cpuIowaitPercent": 0.035342134664933765,
+      "mainCpuBusyPercent": 12.505138785267293,
+      "serviceMemoryPeakMiB": 198.8359375,
+      "hostNetworkRxMiB": 155.52860260009766,
+      "hostNetworkTxMiB": 180.59054279327393
+    },
+    "consumer": {
+      "samples": 89,
+      "cpuBusyPercent": 15.371042953220059,
+      "cpuIowaitPercent": 0.025205944019889782,
+      "mainCpuBusyPercent": 18.18500137015498,
+      "serviceMemoryPeakMiB": 597.0390625,
+      "hostNetworkRxMiB": 398.4179859161377,
+      "hostNetworkTxMiB": 33.703036308288574
+    },
+    "rabbitmq": {
+      "samples": 89,
+      "cpuBusyPercent": 85.42026671115825,
+      "cpuIowaitPercent": 0.022643038457413212,
+      "mainCpuBusyPercent": 98.92164892164892,
+      "serviceMemoryPeakMiB": 197.296875,
+      "hostNetworkRxMiB": 1201.9392652511597,
+      "hostNetworkTxMiB": 927.5070858001709
+    }
+  },
+  "backendPosts": {
+    "ingest-1": {
+      "201": 249998
+    },
+    "ingest-2": {
+      "201": 250000
+    },
+    "ingest-3": {
+      "201": 249999
+    },
+    "ingest-4": {
+      "201": 250003
+    }
+  },
+  "fourIngestSnapshotsMatch": true,
+  "successfulBackendPosts": 1000000,
+  "albWebSocketAffinityPassed": true,
+  "eventCountsReconcile": true,
+  "clientExitCode": 0,
+  "queueThresholdExceeded": false
+}

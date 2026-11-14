@@ -1,0 +1,194 @@
+========== CS6650 LOAD TEST ==========
+Mode: full
+Target RPS: unpaced
+Warmup Target RPS: 300
+Warmup Threads: 32
+Main Threads: 128
+Expected Requests: 500000
+HTTP Endpoint: http://cs6650-ingest-alb-972956563.us-west-2.elb.amazonaws.com/server-v2
+WebSocket Endpoint: ws://cs6650-ingest-alb-972956563.us-west-2.elb.amazonaws.com/server-v2/leaderboard
+WebSocket Drain Period: 15 seconds
+Waiting for all WebSocket subscriptions...
+Resort 6 WebSocket connected in 369.08 ms
+Resort 8 WebSocket connected in 374.22 ms
+Resort 2 WebSocket connected in 379.10 ms
+Resort 10 WebSocket connected in 372.31 ms
+Resort 9 WebSocket connected in 372.65 ms
+Resort 4 WebSocket connected in 371.75 ms
+Resort 5 WebSocket connected in 375.32 ms
+Resort 1 WebSocket connected in 444.14 ms
+Resort 7 WebSocket connected in 373.20 ms
+Resort 3 WebSocket connected in 376.11 ms
+Resort 2 Day 261113206 subscribed successfully
+Resort 4 Day 261113206 subscribed successfully
+Resort 6 Day 261113206 subscribed successfully
+Resort 7 Day 261113206 subscribed successfully
+Resort 1 Day 261113206 subscribed successfully
+Resort 8 Day 261113206 subscribed successfully
+Resort 9 Day 261113206 subscribed successfully
+Resort 5 Day 261113206 subscribed successfully
+Resort 10 Day 261113206 subscribed successfully
+All WebSocket subscriptions confirmed.
+Resort 3 Day 261113206 subscribed successfully
+
+========== WARMUP PHASE ==========
+Finished generating 32000 events.
+Generated Events: 32000
+Phase worker timeout: 3600 seconds
+Phase completed successfully.
+
+----- WARMUP RESULTS -----
+Expected Requests: 32000
+Completed Requests: 32000
+Successful Swipes: 32000
+Failed Swipes: 0
+Runtime: 107.23 seconds
+Throughput: 298.44 req/sec
+
+========== MAIN PHASE ==========
+Finished generating 468000 events.
+Generated Events: 468000
+Phase worker timeout: 3600 seconds
+Phase completed successfully.
+
+----- MAIN RESULTS -----
+Expected Requests: 468000
+Completed Requests: 468000
+Successful Swipes: 468000
+Failed Swipes: 0
+Runtime: 165.68 seconds
+Throughput: 2824.75 req/sec
+
+========== OVERALL PERFORMANCE ==========
+Expected Requests: 500000
+Completed Requests: 500000
+Successful Swipes: 500000
+Failed Swipes: 0
+HTTP Runtime: 272.90 seconds
+Overall HTTP Throughput: 1832.15 req/sec
+
+========== VALIDATION ==========
+Completed Requests: 500000
+Recorded Metrics: 500000
+Validation PASSED!
+
+========== EXPORTING CSV ==========
+CSV saved: swipe_metrics_full.csv (500000 records)
+
+========== WEBSOCKET: BEFORE DRAIN ==========
+
+========== WEBSOCKET PERFORMANCE METRICS ==========
+
+[Leaderboard Updates per Subscriber]
+Resort 1: 178 updates
+Resort 2: 164 updates
+Resort 3: 148 updates
+Resort 4: 185 updates
+Resort 5: 149 updates
+Resort 6: 159 updates
+Resort 7: 138 updates
+Resort 8: 180 updates
+Resort 9: 168 updates
+Resort 10: 167 updates
+
+[Connection Statistics]
+Successful Connections: 10
+Reconnections: 0
+Average Connection Time: 380.79 ms
+Min Connection Time: 369.08 ms
+Max Connection Time: 444.14 ms
+
+[Leaderboard Delivery Statistics]
+Total Leaderboard Updates Delivered: 1636
+Distinct standings changes received: 1636
+Invalid leaderboard payloads: 0
+Duplicate or older versions received: 0
+
+========== PUSH LATENCY STATISTICS ==========
+Total Push Latency Samples: 1636
+Mean:   2.64 ms
+Median: 1.00 ms
+P95:    9.00 ms
+P99:    21.00 ms
+
+========== WEBSOCKET DRAIN ==========
+HTTP traffic has finished.
+Keeping subscribers connected for 15 seconds.
+
+========== WEBSOCKET: AFTER DRAIN ==========
+
+========== WEBSOCKET PERFORMANCE METRICS ==========
+
+[Leaderboard Updates per Subscriber]
+Resort 1: 178 updates
+Resort 2: 164 updates
+Resort 3: 148 updates
+Resort 4: 185 updates
+Resort 5: 149 updates
+Resort 6: 159 updates
+Resort 7: 138 updates
+Resort 8: 180 updates
+Resort 9: 168 updates
+Resort 10: 167 updates
+
+[Connection Statistics]
+Successful Connections: 10
+Reconnections: 0
+Average Connection Time: 380.79 ms
+Min Connection Time: 369.08 ms
+Max Connection Time: 444.14 ms
+
+[Leaderboard Delivery Statistics]
+Total Leaderboard Updates Delivered: 1636
+Distinct standings changes received: 1636
+Invalid leaderboard payloads: 0
+Duplicate or older versions received: 0
+
+========== PUSH LATENCY STATISTICS ==========
+Total Push Latency Samples: 1636
+Mean:   2.64 ms
+Median: 1.00 ms
+P95:    9.00 ms
+P99:    21.00 ms
+
+========== STATISTICAL ANALYSIS ==========
+
+========== INGEST LATENCY STATISTICS ==========
+
+[ALL COMPLETED REQUESTS]
+Total Samples: 500000
+Mean:   42.42 ms
+Median: 41.72 ms
+P95:    68.17 ms
+P99:    90.74 ms
+Min:    2.08 ms
+Max:    1062.99 ms
+
+[SUCCESSFUL REQUESTS (HTTP 201)]
+Total Samples: 500000
+Mean:   42.42 ms
+Median: 41.72 ms
+P95:    68.17 ms
+P99:    90.74 ms
+Min:    2.08 ms
+Max:    1062.99 ms
+
+========== HTTP STATUS DISTRIBUTION ==========
+Status 201               : 500000
+
+========== THROUGHPUT PER RESORT ==========
+Resort ID    Requests        Throughput
+1            50260           184.17 req/sec
+2            49858           182.69 req/sec
+3            50060           183.43 req/sec
+4            49729           182.22 req/sec
+5            50092           183.55 req/sec
+6            50404           184.70 req/sec
+7            49895           182.83 req/sec
+8            49952           183.04 req/sec
+9            49874           182.75 req/sec
+10           49876           182.76 req/sec
+
+========== LOAD TEST FINISHED ==========
+
+Stopping WebSocket subscribers.

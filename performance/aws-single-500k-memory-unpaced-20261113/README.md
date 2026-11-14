@@ -39,3 +39,11 @@ RabbitMQ and the load client shared an EC2 host. The host averaged 99.3% busy CP
 [Client output](client-output.txt) · [Structured metrics](summary.json) · [Queue series](depth-series.csv) · [Message rate series](message-rate-series.csv) · [Final WebSocket snapshots](websocket-snapshots.json)
 
 ![Queue depth and message rates](aws-queue-and-rates.svg)
+
+## RabbitMQ console evidence
+
+The `resort.1` capture at 16:03:36 PST shows the warmup and unpaced main phase. Publish and consumer ACK curves closely track each other, and the queue reads zero after drain. The visible console peak is about 16 messages. The separate one-second sampler observed a peak of 32 messages for this queue, so the table uses the sampler for its peak.
+
+![RabbitMQ resort.1 depth and rates](rabbitmq-resort1-after-run.png)
+
+The 16:03:22 PST RabbitMQ Overview showed aggregate ACK rates around 2,500/s during the main phase. Its 84,382 Ready messages after the test were the existing dead-letter backlog. The benchmark's ten business queues drained, and the dead-letter count stayed unchanged. The 16:05:30 PST CloudWatch screenshot records ALB activity for context. This test's HTTP and WebSocket traffic went directly to one ingest over the VPC, so the screenshot provides no request count or distribution for the test.
